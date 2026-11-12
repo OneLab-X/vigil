@@ -6,9 +6,9 @@
 # Needs: root, Docker, python3, curl, and images vigil/{api,web,agents}:<VERSION> built from this checkout
 # (docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template build).
 set -euo pipefail
-usage() { echo "Usage: sudo $(basename "$0") [--keep]   (--keep leaves the installation running for inspection)"; }
-KEEP=0
-while [ $# -gt 0 ]; do case "$1" in --keep) KEEP=1; shift;; -h|--help) usage; exit 0;; *) usage >&2; exit 2;; esac; done
+usage() { echo "Usage: sudo $(basename "$0") [--keep] [--tls]   (--keep: leave it running; --tls: install with --domain vigil.test --tls-mode internal)"; }
+KEEP=0; TLS=0
+while [ $# -gt 0 ]; do case "$1" in --keep) KEEP=1; shift;; --tls) TLS=1; shift;; -h|--help) usage; exit 0;; *) usage >&2; exit 2;; esac; done
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -56,8 +56,9 @@ grep -q "checksum mismatch" "$WORK/tamper.log" || { cat "$WORK/tamper.log"; echo
 [ ! -e "$DATA_DIR/.env" ] || { echo "FAIL: files written despite bad checksum" >&2; exit 1; }
 cp "$WORK/sums.bak" "$WORK/www/v$VERSION/SHA256SUMS"; echo "ok: rejected"
 
-step "get.sh fresh install (latest version via API, non-interactive)"
-curl -fsSL "$VIGIL_RELEASE_BASE_URL/v$VERSION/get.sh" | bash -s -- --data-dir "$DATA_DIR" --yes \
+tls_args=(); [ "$TLS" = 1 ] && tls_args=(--domain vigil.test --tls-mode internal)
+step "get.sh fresh install (latest version via API, non-interactive) ${tls_args[*]}"
+curl -fsSL "$VIGIL_RELEASE_BASE_URL/v$VERSION/get.sh" | bash -s -- --data-dir "$DATA_DIR" --yes "${tls_args[@]}" \
   --admin-email owner@example.com --admin-name "Smoke Owner" --org "Smoke Org" | tee "$WORK/install.log"
 [ "$(stat -c %a "$DATA_DIR/.env" 2>/dev/null || stat -f %Lp "$DATA_DIR/.env")" = 600 ] || { echo "FAIL: .env not mode 600" >&2; exit 1; }
 grep -q '^VIGIL_INSTALL_MODE=release$' "$DATA_DIR/.env" || { echo "FAIL: not a release install" >&2; exit 1; }
@@ -69,15 +70,31 @@ step "status + readyz"
 vigil() { VIGIL_HOME="$DATA_DIR" bash "$DATA_DIR/scripts/vigil.sh" "$@"; }
 vigil status
 
+if [ "$TLS" = 0 ]; then
 step "only the web port is published, on loopback"
 pub="$(docker ps --filter "label=com.docker.compose.project=vigil" --format '{{.Names}} {{.Ports}}' | grep -- '->' || true)"
 echo "$pub"
 if ! { [ "$(grep -c -- '->' <<<"$pub")" = 1 ] && grep -q 'web' <<<"$pub" && grep -q '127.0.0.1:3000->3000' <<<"$pub"; }; then
   echo "FAIL: unexpected published ports" >&2; exit 1; fi
+BASE=http://127.0.0.1:3000; ORIGIN=http://localhost:3000; CURL=(curl -s)
+else
+step "only the proxy publishes 80/443; web is not published"
+pub="$(docker ps --filter "label=com.docker.compose.project=vigil" --format '{{.Names}} {{.Ports}}' | grep -- '->' || true)"
+echo "$pub"
+if ! { grep -q 'proxy' <<<"$pub" && ! grep -q 'web-1 .*->' <<<"$pub" && grep -q ':443->443' <<<"$pub" && grep -q ':80->80' <<<"$pub"; }; then
+  echo "FAIL: unexpected published ports" >&2; exit 1; fi
+grep -q '^VIGIL_WEB_ORIGIN=https://vigil.test$' "$DATA_DIR/.env" || { echo "FAIL: origin not https" >&2; exit 1; }
+step "HTTP redirects to HTTPS; HSTS set"
+loc="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --resolve vigil.test:80:127.0.0.1 http://vigil.test/login)"
+echo "$loc"; [[ "$loc" =~ ^30[178]\ https://vigil.test/login ]] || { echo "FAIL: no redirect" >&2; exit 1; }
+curl -sk -D - -o /dev/null --resolve vigil.test:443:127.0.0.1 https://vigil.test/login | grep -qi '^strict-transport-security: max-age=31536000' \
+  || { echo "FAIL: no HSTS" >&2; exit 1; }
+BASE=https://vigil.test; ORIGIN=https://vigil.test; CURL=(curl -sk --resolve vigil.test:443:127.0.0.1)
+fi
 
 step "first-owner login through the web proxy"
-code="$(curl -s -o "$WORK/login.json" -w '%{http_code}' -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
-  --data "{\"email\":\"owner@example.com\",\"password\":\"$PW\"}" http://127.0.0.1:3000/api/v1/auth/login)"
+code="$("${CURL[@]}" -o "$WORK/login.json" -w '%{http_code}' -H 'content-type: application/json' -H "origin: $ORIGIN" \
+  --data "{\"email\":\"owner@example.com\",\"password\":\"$PW\"}" "$BASE/api/v1/auth/login")"
 cat "$WORK/login.json"; echo
 if ! { [ "$code" = 200 ] && grep -q '"mustChangePassword":true' "$WORK/login.json"; }; then echo "FAIL: login returned $code" >&2; exit 1; fi
 

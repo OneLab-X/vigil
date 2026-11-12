@@ -95,9 +95,11 @@ jobs:
         run: |
           docker compose -f deploy/compose.yaml --env-file deploy/env.template config -q
           docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template config -q
+          VIGIL_DOMAIN=vigil.example.com docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml --env-file deploy/env.template config --format json > tls.json
+          python3 -c 'import json; c=json.load(open("tls.json"))["services"]; assert not c["web"].get("ports"), "web must not be published with TLS"; assert {p["published"] for p in c["proxy"]["ports"]} == {"80","443"}'
       - name: No unpinned images
         run: |
-          imgs=$(docker compose -f deploy/compose.yaml --env-file deploy/env.template config --images)
+          imgs=$(VIGIL_DOMAIN=vigil.example.com docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml --env-file deploy/env.template config --images)
           echo "$imgs"
           ! echo "$imgs" | grep -Eq ':latest$|^[^:]+$' || { echo "::error::unpinned image in compose.yaml"; exit 1; }
           awk 'toupper($1)=="FROM"{img=$2; if (toupper($3)=="AS") stage[$4]=1; if (!(img in stage) && (img !~ /:/ || img ~ /:latest$/)) {print FILENAME": unpinned base image "img; bad=1}} END{exit bad}' deploy/docker/*.Dockerfile
@@ -145,3 +147,5 @@ jobs:
         run: docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template build
       - name: Install with get.sh from a local registry + asset server; assert readyz, login, rerun, backup, upgrade
         run: sudo bash deploy/test/smoke-get.sh
+      - name: Same with built-in HTTPS (--domain vigil.test --tls-mode internal)
+        run: sudo bash deploy/test/smoke-get.sh --tls

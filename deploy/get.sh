@@ -32,6 +32,12 @@ Usage: sudo bash get.sh [options]
 
   --version X.Y.Z       release to install (default: latest published release; never an unpinned "latest" image)
   --data-dir DIR        installation directory (default: /opt/vigil)
+  --domain FQDN         serve Vigil over HTTPS at this name: built-in Caddy proxy on 80/443, HTTP->HTTPS redirect,
+                        HSTS (DNS must point to this host for Let's Encrypt)
+  --email ADDR          ACME account email for --domain (expiry notices; optional)
+  --tls-mode MODE       acme (default with --domain) | custom (with --tls-cert/--tls-key) | internal (private CA) | off
+  --tls-cert FILE       PEM certificate chain for --tls-mode custom
+  --tls-key FILE        PEM private key for --tls-mode custom
   --admin-email ADDR    first owner's email      \
   --admin-name NAME     first owner's name        } prompted for when missing and a terminal is attached
   --org NAME            organization name        /
@@ -187,7 +193,7 @@ prepare_dir() {
   umask 022
   install -d -m 0755 "$DATA_DIR"
   local f
-  for f in compose.yaml env.template VERSION empty-credentials.json; do install -m 0644 "$BUNDLE/$f" "$DATA_DIR/$f"; done
+  for f in compose.yaml compose.tls.yaml env.template VERSION empty-credentials.json; do install -m 0644 "$BUNDLE/$f" "$DATA_DIR/$f"; done
   rm -rf "$DATA_DIR/scripts.new" "$DATA_DIR/postgres.new"
   cp -R "$BUNDLE/scripts" "$DATA_DIR/scripts.new"; cp -R "$BUNDLE/postgres" "$DATA_DIR/postgres.new"
   rm -rf "$DATA_DIR/scripts" "$DATA_DIR/postgres"; mv "$DATA_DIR/scripts.new" "$DATA_DIR/scripts"; mv "$DATA_DIR/postgres.new" "$DATA_DIR/postgres"
@@ -199,11 +205,16 @@ prepare_dir() {
 }
 
 main() {
-  VERSION=""; DATA_DIR="/opt/vigil"; ADMIN_EMAIL=""; ADMIN_NAME=""; ORG=""
+  VERSION=""; DATA_DIR="/opt/vigil"; DOMAIN=""; ACME_EMAIL=""; TLS_MODE=""; TLS_CERT=""; TLS_KEY=""; ADMIN_EMAIL=""; ADMIN_NAME=""; ORG=""
   ASSUME_YES=0; DONT_START=0; RESET=0; SKIP_DOCKER_INSTALL=0
   while [ $# -gt 0 ]; do case "$1" in
     --version) VERSION="${2:?--version needs a value}"; shift 2;;
     --data-dir) DATA_DIR="${2:?--data-dir needs a value}"; shift 2;;
+    --domain) DOMAIN="${2:?--domain needs a value}"; shift 2;;
+    --email) ACME_EMAIL="${2:?--email needs a value}"; shift 2;;
+    --tls-mode) TLS_MODE="${2:?--tls-mode needs a value}"; shift 2;;
+    --tls-cert) TLS_CERT="${2:?--tls-cert needs a value}"; shift 2;;
+    --tls-key) TLS_KEY="${2:?--tls-key needs a value}"; shift 2;;
     --admin-email) ADMIN_EMAIL="${2:?--admin-email needs a value}"; shift 2;;
     --admin-name) ADMIN_NAME="${2:?--admin-name needs a value}"; shift 2;;
     --org) ORG="${2:?--org needs a value}"; shift 2;;
@@ -218,6 +229,19 @@ main() {
   [ "$(uname -s)" = Linux ] || die "get.sh installs on Linux hosts; on macOS/Windows use Docker Desktop and deploy/scripts/install.sh from a checkout"
   [[ "$DATA_DIR" = /* ]] || die "--data-dir must be an absolute path"
   DATA_DIR="${DATA_DIR%/}"
+  if [ -n "$DOMAIN" ]; then
+    [[ "$DOMAIN" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]] || die "invalid --domain '$DOMAIN'"
+    TLS_MODE="${TLS_MODE:-acme}"
+  else
+    [ -z "$TLS_MODE" ] || [ "$TLS_MODE" = off ] || die "--tls-mode $TLS_MODE needs --domain"
+    TLS_MODE=off
+  fi
+  case "$TLS_MODE" in acme|custom|internal|off) ;; *) die "--tls-mode must be acme, custom, internal or off";; esac
+  [ -z "$ACME_EMAIL" ] || [[ "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "invalid --email '$ACME_EMAIL'"
+  if [ "$TLS_MODE" = custom ]; then
+    [ -s "$TLS_CERT" ] && [ -s "$TLS_KEY" ] || die "--tls-mode custom needs readable --tls-cert and --tls-key files"
+    TLS_CERT="$(cd "$(dirname "$TLS_CERT")" && pwd)/$(basename "$TLS_CERT")"; TLS_KEY="$(cd "$(dirname "$TLS_KEY")" && pwd)/$(basename "$TLS_KEY")"
+  fi
 
   TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
   detect_os
@@ -248,6 +272,12 @@ main() {
 
   # Settings applied when .env is first generated (install.sh never overwrites an existing .env).
   export VIGIL_INSTALL_MODE=release
+  if [ -n "$DOMAIN" ]; then
+    export VIGIL_DOMAIN="$DOMAIN" VIGIL_TLS_MODE="$TLS_MODE" VIGIL_ACME_EMAIL="$ACME_EMAIL"
+    [ "$TLS_MODE" = off ] || export VIGIL_WEB_ORIGIN="https://$DOMAIN"
+    [ "$TLS_MODE" != custom ] || export VIGIL_TLS_CERT_FILE="$TLS_CERT" VIGIL_TLS_KEY_FILE="$TLS_KEY"
+    [ "$existing" = 0 ] || warn "--domain only applies to new installs; for this one set VIGIL_DOMAIN/VIGIL_TLS_MODE/VIGIL_WEB_ORIGIN in $DATA_DIR/.env and re-run"
+  fi
 
   local args=()
   [ "$ASSUME_YES" = 1 ] && args+=(--yes)

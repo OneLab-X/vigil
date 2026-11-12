@@ -26,7 +26,13 @@ Release notes for each GitHub release are taken from the matching section of thi
   `uninstall [--purge]`. Upgrades merge new `env.template` settings into `.env` without touching existing secrets.
 - `install.sh --no-start` and `--password-file`; CI installer smoke test (`deploy/test/smoke-get.sh`).
 
+- Built-in HTTPS: set `VIGIL_DOMAIN` (`get.sh --domain`) to run a pinned Caddy proxy on 80/443 with automatic
+  Let's Encrypt, HTTP→HTTPS redirect and HSTS; `VIGIL_TLS_MODE=acme|custom|internal|off`. With TLS on, the web
+  container is not published at all. Preflight checks ports 80/443 and that DNS points at this host (cloud metadata,
+  no third-party IP service).
+
 ### Changed
+- Docker Compose 2.24+ is required (was 2.20).
 - `deploy/compose.yaml` references registry images (`VIGIL_IMAGE_REGISTRY`); local builds moved to
   `deploy/compose.build.yaml`. Source installs keep their `vigil/<service>` image names.
 - Test fixtures, docs and the dev seed use documentation placeholders (`example-project`, `Example Security`) instead

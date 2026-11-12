@@ -10,7 +10,7 @@ Kubernetes/Helm, high availability and air-gapped installs are on the [roadmap](
 
 | | Minimum | Recommended |
 |---|---|---|
-| Docker Engine (or Docker Desktop / Colima) + Compose v2 | Compose 2.20 | latest |
+| Docker Engine (or Docker Desktop / Colima) + Compose v2 | Compose 2.24 | latest |
 | CPU available to Docker | 2 | 4 |
 | Memory available to Docker | 3 GiB | 8 GiB |
 | Disk | 10 GiB free | sized for retention (raw evidence + events) |
