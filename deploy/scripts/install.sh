@@ -44,7 +44,7 @@ else
   env_set VIGIL_VERSION "$(target_version)"
   # optional overrides from the environment at install time
   for k in VIGIL_WEB_PORT VIGIL_WEB_BIND VIGIL_WEB_ORIGIN VIGIL_IMAGE_REGISTRY VIGIL_INSTALL_MODE GEMINI_API_KEY \
-           VIGIL_DOMAIN VIGIL_TLS_MODE VIGIL_ACME_EMAIL VIGIL_TLS_CERT_FILE VIGIL_TLS_KEY_FILE; do
+           VIGIL_DOMAIN VIGIL_TLS_MODE VIGIL_ACME_EMAIL VIGIL_TLS_CERT_FILE VIGIL_TLS_KEY_FILE VIGIL_AWS_PRINCIPAL_ARN; do
     if [ -n "${!k:-}" ]; then env_set "$k" "${!k}"; fi
   done
   if [ -n "${VIGIL_WEB_PORT:-}" ] && [ -z "${VIGIL_WEB_ORIGIN:-}" ]; then env_set VIGIL_WEB_ORIGIN "http://localhost:$VIGIL_WEB_PORT"; fi

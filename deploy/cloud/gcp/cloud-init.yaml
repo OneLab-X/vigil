@@ -1,0 +1,30 @@
+#cloud-config
+# Google Compute Engine: pass as the "user-data" metadata key of an Ubuntu 24.04 VM running as a service account with
+# roles/logging.viewer. Edit the values marked CHANGE_ME. Terraform users: main.tf renders this for you.
+# Remove the --domain/--email lines to skip built-in HTTPS (the UI then listens on 127.0.0.1:3000 only).
+# Vigil first-boot install (shared by deploy/cloud/{aws,gcp,azure}). Rendered by Terraform templatefile();
+# every value is validated by the module variables before it reaches this file.
+# Downloads get.sh for a pinned release, verifies it against that release's SHA256SUMS (and an optional pinned hash),
+# then runs it non-interactively. The owner's one-time password is written to /opt/vigil/initial-owner-password
+# (root-only), never to the cloud-init log.
+write_files:
+  - path: /root/vigil-install.sh
+    owner: root:root
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      version='0.1.0'
+      base="https://github.com/OneLab-X/vigil/releases/download/v$version"
+      work="$(mktemp -d)"
+      curl -fsSL --retry 5 --retry-delay 5 -o "$work/get.sh" "$base/get.sh"
+      curl -fsSL --retry 5 --retry-delay 5 -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+      (cd "$work" && grep -E '  get\.sh$' SHA256SUMS | sha256sum -c -)
+      pinned=''
+      if [ -n "$pinned" ]; then echo "$pinned  $work/get.sh" | sha256sum -c -; fi
+      args=(--version "$version" --yes --admin-email 'CHANGE_ME@example.com' --admin-name 'CHANGE_ME Admin' --org 'CHANGE_ME Org')
+      args+=(--domain 'vigil.example.com')
+      args+=(--email 'CHANGE_ME@example.com')
+      bash "$work/get.sh" "${args[@]}"
+runcmd:
+  - [bash, /root/vigil-install.sh]

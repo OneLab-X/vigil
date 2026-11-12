@@ -104,6 +104,23 @@ jobs:
           ! echo "$imgs" | grep -Eq ':latest$|^[^:]+$' || { echo "::error::unpinned image in compose.yaml"; exit 1; }
           awk 'toupper($1)=="FROM"{img=$2; if (toupper($3)=="AS") stage[$4]=1; if (!(img in stage) && (img !~ /:/ || img ~ /:latest$/)) {print FILENAME": unpinned base image "img; bad=1}} END{exit bad}' deploy/docker/*.Dockerfile
 
+  terraform:
+    name: cloud examples (terraform fmt + validate, cloud-init)
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        cloud: [aws, gcp, azure]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: terraform fmt / init / validate
+        run: |
+          docker run --rm -v "$PWD/deploy/cloud:/w" -w /w/${{ matrix.cloud }} -e TF_DATA_DIR=/tmp/tf --entrypoint sh \
+            hashicorp/terraform:1.16.7 -c 'terraform fmt -check -diff && terraform init -backend=false -input=false >/dev/null && terraform validate'
+      - name: cloud-init.yaml parses and its script passes shellcheck
+        run: |
+          python3 -c 'import yaml,sys; d=yaml.safe_load(open(sys.argv[1])); open("/tmp/ci.sh","w").write(d["write_files"][0]["content"])' deploy/cloud/${{ matrix.cloud }}/cloud-init.yaml
+          shellcheck /tmp/ci.sh
+
   secrets:
     name: secret scan (gitleaks)
     runs-on: ubuntu-24.04

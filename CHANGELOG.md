@@ -31,6 +31,14 @@ Release notes for each GitHub release are taken from the matching section of thi
   container is not published at all. Preflight checks ports 80/443 and that DNS points at this host (cloud metadata,
   no third-party IP service).
 
+- Cloud quickstarts in `deploy/cloud/{aws,gcp,azure}`: cloud-init user data that installs a pinned, checksum-verified
+  release, and Terraform examples (network, firewall with only 80/443 open, VM, encrypted disk, static IP, optional DNS)
+  that attach the identity each connector uses — EC2 instance profile limited to `sts:AssumeRole` into `vigil-reader*`
+  roles (IMDSv2, hop limit 2), GCE service account with `roles/logging.viewer`, Azure user-assigned managed identity with
+  Monitoring Reader. No keys or secrets are created.
+- Azure connector: `managed_identity` auth mode (tokens from the VM's Instance Metadata Service; optional user-assigned
+  identity client id). Read-only; client secrets are refused in this mode.
+
 ### Changed
 - Docker Compose 2.24+ is required (was 2.20).
 - `deploy/compose.yaml` references registry images (`VIGIL_IMAGE_REGISTRY`); local builds moved to
