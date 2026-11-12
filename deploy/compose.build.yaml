@@ -1,0 +1,18 @@
+# Source install override: build the Vigil images from this checkout instead of pulling release images.
+# Used automatically by deploy/scripts/* when VIGIL_INSTALL_MODE=source (the default inside a git checkout):
+#   docker compose -f compose.yaml -f compose.build.yaml build
+# Locally built images are named vigil/<service>:<version> so they are never confused with signed release images.
+services:
+  migrate:
+    image: vigil/api:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/api.Dockerfile, args: { VIGIL_VERSION: "${VIGIL_VERSION}" } }
+  api:
+    image: vigil/api:${VIGIL_VERSION}
+  worker:
+    image: vigil/api:${VIGIL_VERSION}
+  agents:
+    image: vigil/agents:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/agents.Dockerfile }
+  web:
+    image: vigil/web:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/web.Dockerfile, args: { VIGIL_API_URL: "http://api:8080" } }

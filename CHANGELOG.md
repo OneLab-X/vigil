@@ -10,7 +10,17 @@ Release notes for each GitHub release are taken from the matching section of thi
 - Open-source project files: Apache-2.0 `LICENSE` and `NOTICE`, `CONTRIBUTING.md` (DCO sign-off), `CODE_OF_CONDUCT.md`,
   `SECURITY.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, issue/PR templates, `CODEOWNERS`, Dependabot, gitleaks config.
 
+- Release pipeline: `.github/workflows/release.yml` builds multi-arch (amd64/arm64) images
+  `ghcr.io/onelab-x/vigil-{api,web,agents}`, tagged `X.Y.Z` and `X.Y`, signed with cosign keyless, with SPDX SBOM
+  attestations; release assets `compose.yaml`, `env.template`, `vigil-deploy-X.Y.Z.tar.gz`, `SHA256SUMS` (signed).
+- CI: core/api tests against Postgres, typecheck, web build, agents pytest, shellcheck, compose validation, image pin
+  check, gitleaks, DCO.
+- Operator scripts: `--help` everywhere; release mode pulls images and verifies signatures with cosign when installed
+  (`VIGIL_VERIFY_SIGNATURES=auto|require|off`); source mode builds via `deploy/compose.build.yaml`.
+
 ### Changed
+- `deploy/compose.yaml` references registry images (`VIGIL_IMAGE_REGISTRY`); local builds moved to
+  `deploy/compose.build.yaml`. Source installs keep their `vigil/<service>` image names.
 - Test fixtures, docs and the dev seed use documentation placeholders (`example-project`, `Example Security`) instead
   of real project identifiers. Existing local dev databases keep their old demo tenant; `pnpm db:seed` now creates
   tenant slug `example`.

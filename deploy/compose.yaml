@@ -1,6 +1,8 @@
 # Vigil — self-hosted single-organization install.
 # Only the web UI is published. API, worker, agents, Postgres and the object store are reachable only on the
 # private "backend" network, so /internal/v1 (agent tool broker) is never exposed.
+# Images are pinned to VIGIL_VERSION (never "latest"). Release installs pull signed images from
+# VIGIL_IMAGE_REGISTRY; source installs add compose.build.yaml to build them locally from a checkout.
 name: ${COMPOSE_PROJECT_NAME:-vigil}
 
 x-api-env: &api-env
@@ -81,8 +83,7 @@ services:
 
   # One-shot: apply database migrations and create the evidence bucket. Re-run safely on every upgrade.
   migrate:
-    image: vigil/api:${VIGIL_VERSION}
-    build: { context: .., dockerfile: deploy/docker/api.Dockerfile, args: { VIGIL_VERSION: "${VIGIL_VERSION}" } }
+    image: ${VIGIL_IMAGE_REGISTRY:-ghcr.io/onelab-x}/vigil-api:${VIGIL_VERSION:?VIGIL_VERSION must be set}
     environment: *api-env
     command: ["sh", "-c", "vigil-migrate && vigil-admin init-storage"]
     depends_on:
@@ -92,7 +93,7 @@ services:
     networks: [backend]
 
   api:
-    image: vigil/api:${VIGIL_VERSION}
+    image: ${VIGIL_IMAGE_REGISTRY:-ghcr.io/onelab-x}/vigil-api:${VIGIL_VERSION:?VIGIL_VERSION must be set}
     restart: unless-stopped
     environment:
       <<: *api-env
@@ -103,7 +104,7 @@ services:
     networks: [backend]
 
   worker:
-    image: vigil/api:${VIGIL_VERSION}
+    image: ${VIGIL_IMAGE_REGISTRY:-ghcr.io/onelab-x}/vigil-api:${VIGIL_VERSION:?VIGIL_VERSION must be set}
     restart: unless-stopped
     environment: *api-env
     command: ["node", "--import", "tsx", "src/worker-main.ts"]
@@ -119,8 +120,7 @@ services:
     networks: [backend]
 
   agents:
-    image: vigil/agents:${VIGIL_VERSION}
-    build: { context: .., dockerfile: deploy/docker/agents.Dockerfile }
+    image: ${VIGIL_IMAGE_REGISTRY:-ghcr.io/onelab-x}/vigil-agents:${VIGIL_VERSION:?VIGIL_VERSION must be set}
     restart: unless-stopped
     # Model credentials live only here. No database or cloud credentials are given to this service.
     environment:
@@ -133,8 +133,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"] # lets a customer-hosted model on this host (e.g. Ollama) be reached
 
   web:
-    image: vigil/web:${VIGIL_VERSION}
-    build: { context: .., dockerfile: deploy/docker/web.Dockerfile, args: { VIGIL_API_URL: "http://api:8080" } }
+    image: ${VIGIL_IMAGE_REGISTRY:-ghcr.io/onelab-x}/vigil-web:${VIGIL_VERSION:?VIGIL_VERSION must be set}
     restart: unless-stopped
     ports: ["${VIGIL_WEB_BIND:-127.0.0.1}:${VIGIL_WEB_PORT:-3000}:3000"]
     depends_on:

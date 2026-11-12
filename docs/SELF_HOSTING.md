@@ -16,16 +16,22 @@ Kubernetes/Helm, high availability and air-gapped installs are on the [roadmap](
 | Disk | 10 GiB free | sized for retention (raw evidence + events) |
 | Tools on the host | bash, openssl, python3 (restore checksum check) | |
 
-The image builds do not require BuildKit.
+Images come from one of two places, auto-detected by the scripts (`VIGIL_INSTALL_MODE` overrides):
+
+- **release** — prebuilt multi-arch images `ghcr.io/onelab-x/vigil-{api,web,agents}:<version>`, pulled and, when
+  [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) is installed, signature-verified
+  (`VIGIL_VERIFY_SIGNATURES=auto|require|off`). Used by installs made from release assets.
+- **source** — built locally from a git checkout (`deploy/compose.build.yaml`); images are named `vigil/<service>`.
+  The image builds do not require BuildKit.
 
 ## 2. What gets installed
 
 | Service | Image | Purpose | Reachable from |
 |---|---|---|---|
-| `web` | built from `deploy/docker/web.Dockerfile` | Next.js UI; proxies `/api/v1` to the API | **published** on `VIGIL_WEB_BIND:VIGIL_WEB_PORT` (default `127.0.0.1:3000`) |
-| `api` | `deploy/docker/api.Dockerfile` | REST API, tool broker, RBAC, audit | internal network only |
+| `web` | `ghcr.io/onelab-x/vigil-web` (release) or built from `deploy/docker/web.Dockerfile` (source) | Next.js UI; proxies `/api/v1` to the API | **published** on `VIGIL_WEB_BIND:VIGIL_WEB_PORT` (default `127.0.0.1:3000`) |
+| `api` | `ghcr.io/onelab-x/vigil-api` / `deploy/docker/api.Dockerfile` | REST API, tool broker, RBAC, audit | internal network only |
 | `worker` | same image as `api` | ingestion polling, detection, correlation, agent dispatch, timeouts | internal |
-| `agents` | `deploy/docker/agents.Dockerfile` | AI investigation worker. Holds model keys only; no DB or cloud credentials | internal |
+| `agents` | `ghcr.io/onelab-x/vigil-agents` / `deploy/docker/agents.Dockerfile` | AI investigation worker. Holds model keys only; no DB or cloud credentials | internal |
 | `postgres` | `pgvector/pgvector:0.8.1-pg17` | all application data (row-level security per organization) | internal |
 | `objectstore` | `chrislusf/seaweedfs:4.51` | S3-compatible, write-once raw evidence | internal |
 | `migrate` | same image as `api` | one-shot: migrations + evidence bucket creation, runs before api/worker on every start | — |

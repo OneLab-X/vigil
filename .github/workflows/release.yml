@@ -1,0 +1,153 @@
+name: Release
+
+# Tag vX.Y.Z on main (matching VERSION and a CHANGELOG section) to publish:
+#   - multi-arch images ghcr.io/<owner>/vigil-{api,web,agents}:X.Y.Z and :X.Y, signed with cosign (keyless OIDC),
+#     with an SPDX SBOM attestation
+#   - release assets: compose.yaml, env.template, vigil-deploy-X.Y.Z.tar.gz, get.sh, SBOMs, SHA256SUMS
+#     (+ SHA256SUMS.sigstore.json signature bundle) and release notes from CHANGELOG.md
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SYFT_IMAGE: anchore/syft:v1.57.1
+  COSIGN_VERSION: v3.1.4
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      registry: ${{ steps.v.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: v
+        name: Tag must match VERSION and CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ "$version" = "$(tr -d '[:space:]' < VERSION)" ] || { echo "::error::tag $GITHUB_REF_NAME != VERSION $(cat VERSION)"; exit 1; }
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## [$version]' section"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # cosign keyless signing
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [api, web, agents]
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      MINOR: ${{ needs.prepare.outputs.minor }}
+      REGISTRY: ${{ needs.prepare.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.image }}.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          build-args: |
+            VIGIL_VERSION=${{ env.VERSION }}
+          tags: |
+            ${{ env.REGISTRY }}/vigil-${{ matrix.image }}:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/vigil-${{ matrix.image }}:${{ env.MINOR }}
+          labels: |
+            org.opencontainers.image.title=vigil-${{ matrix.image }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - name: Sign image (keyless)
+        env:
+          REF: ${{ env.REGISTRY }}/vigil-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REF"
+      - name: SBOM (syft, SPDX) + signed attestation
+        env:
+          REF: ${{ env.REGISTRY }}/vigil-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p sbom
+          docker run --rm -v "$PWD/sbom:/out" -v "$HOME/.docker:/root/.docker:ro" "$SYFT_IMAGE" \
+            "registry:$REF" -o "spdx-json=/out/vigil-${{ matrix.image }}-${VERSION}.spdx.json"
+          cosign attest --yes --type spdxjson --predicate "sbom/vigil-${{ matrix.image }}-${VERSION}.spdx.json" "$REF"
+      - name: Verify signature as an installer would
+        env:
+          REF: ${{ env.REGISTRY }}/vigil-${{ matrix.image }}:${{ env.VERSION }}
+        run: |
+          cosign verify "$REF" \
+            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ matrix.image }}
+          path: sbom/
+
+  release:
+    needs: [prepare, images]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write   # sign SHA256SUMS
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      REGISTRY: ${{ needs.prepare.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          path: dist/
+          merge-multiple: true
+      - name: Render release assets
+        run: deploy/release/render-assets.sh "$VERSION" "$REGISTRY" dist
+      - name: Sign SHA256SUMS (keyless)
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {p=1; next} p && /^## \[/ {exit} p' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ## Install
+
+          \`\`\`bash
+          curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/get.sh | sudo bash -s -- --version ${VERSION}
+          \`\`\`
+
+          Images: \`${REGISTRY}/vigil-{api,web,agents}:${VERSION}\` (linux/amd64, linux/arm64), signed with cosign keyless.
+          Verify: \`cosign verify ${REGISTRY}/vigil-api:${VERSION} --certificate-identity-regexp '^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com\`
+          EOF
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v$VERSION" --verify-tag --title "Vigil $VERSION" --notes-file notes.md dist/*
