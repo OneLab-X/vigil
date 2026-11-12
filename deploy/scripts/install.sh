@@ -5,22 +5,27 @@ source "$(dirname "$0")/lib.sh"
 usage() { cat <<EOF
 First-time installation (safe to re-run: existing .env and data are kept, secrets are never regenerated).
 
-Usage: $(basename "$0") [--admin-email E --admin-name N --org O] [--yes] [--skip-preflight]
+Usage: $(basename "$0") [--admin-email E --admin-name N --org O] [--yes] [--no-start] [--password-file F] [--skip-preflight]
 
   --admin-email/--admin-name/--org  first owner account (prompted for if missing and a terminal is attached)
   --yes                             non-interactive; fail instead of prompting
+  --no-start                        only write .env (and fetch nothing); start later by re-running without it
+  --password-file F                 write the first owner's one-time password to F (mode 600) instead of the
+                                    terminal — use for unattended installs whose output is logged
   --skip-preflight                  skip deploy/scripts/preflight.sh (not recommended)
 
 Mode: $INSTALL_MODE (source = build from this checkout, release = pull signed images; override with VIGIL_INSTALL_MODE)
 EOF
 }
-ADMIN_EMAIL=""; ADMIN_NAME=""; ORG=""; PREFLIGHT=1
+ADMIN_EMAIL=""; ADMIN_NAME=""; ORG=""; PREFLIGHT=1; NO_START=0; PASSWORD_FILE=""
 while [ $# -gt 0 ]; do case "$1" in
   --admin-email) ADMIN_EMAIL="${2:?--admin-email needs a value}"; shift 2;;
   --admin-name) ADMIN_NAME="${2:?--admin-name needs a value}"; shift 2;;
   --org) ORG="${2:?--org needs a value}"; shift 2;;
   --yes) export ASSUME_YES=1; shift;;
   --skip-preflight) PREFLIGHT=0; shift;;
+  --no-start) NO_START=1; shift;;
+  --password-file) PASSWORD_FILE="${2:?--password-file needs a path}"; shift 2;;
   -h|--help) usage; exit 0;;
   *) usage >&2; die "unknown option $1";; esac; done
 
@@ -46,6 +51,10 @@ else
 fi
 
 version="$(env_get VIGIL_VERSION)"
+if [ "$NO_START" = 1 ]; then
+  ok "configuration ready; not starting (--no-start). Start with: $DEPLOY_DIR/scripts/install.sh"
+  exit 0
+fi
 fetch_images "$version" || die "could not get images for $version"
 info "starting services"
 dc up -d --wait --wait-timeout 300 || { dc ps; die "services did not become healthy — run deploy/scripts/diagnostics.sh"; }
@@ -62,8 +71,26 @@ if [ "${has_users:-0}" = 0 ]; then
   [ -n "$ADMIN_EMAIL" ] || read -r -p "Administrator email: " ADMIN_EMAIL
   [ -n "$ADMIN_NAME" ] || read -r -p "Administrator name: " ADMIN_NAME
   [ -n "$ORG" ] || read -r -p "Organization name: " ORG
-  dc exec -T api vigil-admin create-owner --email "$ADMIN_EMAIL" --name "$ADMIN_NAME" --org "$ORG"
+  owner_out="$(dc exec -T api vigil-admin create-owner --email "$ADMIN_EMAIL" --name "$ADMIN_NAME" --org "$ORG")" || die "could not create the first owner"
+  otp="$(sed -n 's/^one-time password: //p' <<<"$owner_out")"
+  [ -n "$otp" ] || die "unexpected output from vigil-admin create-owner"
+  ok "created organization \"$ORG\" and owner $ADMIN_EMAIL"
 else
   ok "users already exist; skipping administrator creation"
 fi
-info "Vigil $version is running at $(env_get VIGIL_WEB_ORIGIN) (bound to $(env_get VIGIL_WEB_BIND):$(env_get VIGIL_WEB_PORT))"
+
+printf '\n%s\n' "Vigil $version is running."
+printf '  URL:   %s  (bound to %s:%s)\n' "$(env_get VIGIL_WEB_ORIGIN)" "$(env_get VIGIL_WEB_BIND)" "$(env_get VIGIL_WEB_PORT)"
+if [ -n "${otp:-}" ]; then
+  if [ -n "$PASSWORD_FILE" ]; then
+    (umask 077; printf '%s\n' "$otp" > "$PASSWORD_FILE"); chmod 600 "$PASSWORD_FILE"
+    printf '  Owner: %s — one-time password saved to %s (root-only). Read it, then delete the file.\n' "$ADMIN_EMAIL" "$PASSWORD_FILE"
+  else
+    printf '  Owner: %s\n  One-time password: %s\n' "$ADMIN_EMAIL" "$otp"
+  fi
+  printf '  Sign in and change it immediately; it is not stored anywhere else in plain text.\n'
+fi
+if [ "$(env_get VIGIL_WEB_BIND)" = 127.0.0.1 ]; then
+  printf '  The UI listens on this host only. Put a TLS reverse proxy in front, or reach it over SSH:\n'
+  printf '    ssh -L %s:127.0.0.1:%s <user>@<this-host>   then open http://localhost:%s\n' "$(env_get VIGIL_WEB_PORT)" "$(env_get VIGIL_WEB_PORT)" "$(env_get VIGIL_WEB_PORT)"
+fi

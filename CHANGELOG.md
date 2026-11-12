@@ -9,7 +9,6 @@ Release notes for each GitHub release are taken from the matching section of thi
 ### Added
 - Open-source project files: Apache-2.0 `LICENSE` and `NOTICE`, `CONTRIBUTING.md` (DCO sign-off), `CODE_OF_CONDUCT.md`,
   `SECURITY.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, issue/PR templates, `CODEOWNERS`, Dependabot, gitleaks config.
-
 - Release pipeline: `.github/workflows/release.yml` builds multi-arch (amd64/arm64) images
   `ghcr.io/onelab-x/vigil-{api,web,agents}`, tagged `X.Y.Z` and `X.Y`, signed with cosign keyless, with SPDX SBOM
   attestations; release assets `compose.yaml`, `env.template`, `vigil-deploy-X.Y.Z.tar.gz`, `SHA256SUMS` (signed).
@@ -17,6 +16,15 @@ Release notes for each GitHub release are taken from the matching section of thi
   check, gitleaks, DCO.
 - Operator scripts: `--help` everywhere; release mode pulls images and verifies signatures with cosign when installed
   (`VIGIL_VERIFY_SIGNATURES=auto|require|off`); source mode builds via `deploy/compose.build.yaml`.
+
+- `get.sh` clean-VM installer (release asset): installs Docker when missing (Ubuntu 22.04/24.04, Debian 12,
+  RHEL/Alma/Rocky 9, Amazon Linux 2023), verifies the release bundle against `SHA256SUMS` (and its cosign signature when
+  cosign is installed), installs into `/opt/vigil`, creates the first owner. Re-runs are idempotent; `--reset` backs up
+  and moves the old install aside after a typed confirmation. Unattended installs write the one-time password to a
+  root-only file instead of logs.
+- `vigil` operator CLI: `status`, `logs`, `backup`, `restore`, `upgrade [--version X]`, `rollback`, `diagnostics`,
+  `uninstall [--purge]`. Upgrades merge new `env.template` settings into `.env` without touching existing secrets.
+- `install.sh --no-start` and `--password-file`; CI installer smoke test (`deploy/test/smoke-get.sh`).
 
 ### Changed
 - `deploy/compose.yaml` references registry images (`VIGIL_IMAGE_REGISTRY`); local builds moved to

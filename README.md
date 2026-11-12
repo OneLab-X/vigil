@@ -45,18 +45,21 @@ Help live-test a connector: `scripts/verify-<provider>-live.mts` (see [CONTRIBUT
 
 ## Install in 5 minutes
 
-On a Linux VM (any cloud or on-prem) with Docker Engine + Compose v2, 2 vCPU / 4 GiB minimum (4 vCPU / 8 GiB
-recommended):
+On a fresh Linux VM — Ubuntu 22.04/24.04, Debian 12, RHEL/Alma/Rocky 9 or Amazon Linux 2023, on AWS, Google Cloud,
+Azure or anywhere else; 2 vCPU / 4 GiB minimum, 4 vCPU / 8 GiB recommended, 50 GiB disk:
 
 ```bash
-git clone https://github.com/OneLab-X/vigil.git && cd vigil
-deploy/scripts/install.sh
+curl -fsSL https://github.com/OneLab-X/vigil/releases/download/v0.1.0/get.sh | sudo bash -s -- --version 0.1.0
 ```
 
-The installer checks prerequisites, generates secrets locally, starts the stack behind health checks and creates the
-first owner with a one-time password. A one-command installer for clean VMs using prebuilt, signed release images
-(`get.sh`) is on its way — see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for configuration, TLS, backup/restore and
-upgrades.
+Prefer to read it first? `curl -fsSLO …/get.sh && less get.sh && sudo bash get.sh --version 0.1.0`.
+
+`get.sh` installs Docker if needed, downloads the checksum-verified release bundle into `/opt/vigil`, generates secrets
+locally, pulls the signed images, starts everything behind health checks, creates the first owner with a one-time
+password and installs the `vigil` command (`vigil status | logs | backup | restore | upgrade | rollback | diagnostics |
+uninstall`). Re-running it is safe. To run from a git checkout instead: `deploy/scripts/install.sh`.
+
+See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for configuration, TLS, backup/restore and upgrades.
 
 ## Architecture
 
