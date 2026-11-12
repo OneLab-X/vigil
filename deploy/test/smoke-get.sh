@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installer smoke test: install Vigil with get.sh exactly as a user would, but from locally built images pushed to a
 # throwaway local registry and release assets served from a local HTTP server. Then assert /readyz, first-owner login,
-# idempotent re-run, backup, same-version upgrade and uninstall.
+# idempotent re-run, --reset, backup, restore onto fresh secrets, same-version upgrade, rollback and uninstall.
 #
 # Needs: root, Docker, python3, curl, and images vigil/{api,web,agents}:<VERSION> built from this checkout
 # (docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template build).
@@ -112,8 +112,26 @@ step "backup"
 vigil backup
 ls "$DATA_DIR/backups"/*/manifest.json >/dev/null
 
+step "restore onto a fresh install with different secrets (second-VM round trip)"
+bk="$(find "$DATA_DIR/backups" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)"
+cp -R "$bk" "$WORK/backup"
+VIGIL_RESET_CONFIRM="$(hostname)" bash "$WORK/www/v$VERSION/get.sh" --data-dir "$DATA_DIR" --yes --reset "${tls_args[@]}" \
+  --admin-email other@example.com --admin-name Other --org Other > "$WORK/reinstall.log" 2>&1 || { cat "$WORK/reinstall.log"; exit 1; }
+[ "$(grep '^VIGIL_SECRET_KEY=' "$DATA_DIR/.env")" != "$KEY_BEFORE" ] || { echo "FAIL: reset kept the old key" >&2; exit 1; }
+cp -R "$WORK/backup" "$DATA_DIR/backups/restored"
+vigil restore "$DATA_DIR/backups/restored" --yes
+[ "$(grep '^VIGIL_SECRET_KEY=' "$DATA_DIR/.env")" = "$KEY_BEFORE" ] || { echo "FAIL: restore did not bring back the key" >&2; exit 1; }
+vigil status
+code="$("${CURL[@]}" -o "$WORK/login2.json" -w '%{http_code}' -H 'content-type: application/json' -H "origin: $ORIGIN" \
+  --data "{\"email\":\"owner@example.com\",\"password\":\"$PW\"}" "$BASE/api/v1/auth/login")"
+[ "$code" = 200 ] || { cat "$WORK/login2.json"; echo "FAIL: original owner cannot log in after restore ($code)" >&2; exit 1; }
+
 step "upgrade to the same version (download, verify, swap files, health gate)"
 vigil upgrade --version "$VERSION" --yes
+vigil status
+
+step "rollback to the pre-upgrade backup (health-gated restore)"
+vigil rollback --yes
 vigil status
 
 step "uninstall keeps volumes by default"

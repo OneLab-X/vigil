@@ -39,6 +39,15 @@ Release notes for each GitHub release are taken from the matching section of thi
 - Azure connector: `managed_identity` auth mode (tokens from the VM's Instance Metadata Service; optional user-assigned
   identity client id). Read-only; client secrets are refused in this mode.
 
+- `docs/SELF_HOSTING.md` restructured: quick install, sizing, cloud guides, HTTPS, configuration reference generated
+  from `env.template` comments (`deploy/release/gen-env-docs.py`, checked in CI), first login, first source, upgrades,
+  backup **and restore** (incl. onto a new VM), rollback, uninstall, troubleshooting.
+
+### Fixed
+- Restoring a backup onto a fresh install (e.g. a second VM) now re-aligns the Postgres role passwords with the restored
+  `.env`, so the application can connect afterwards.
+- `render-assets.sh` no longer misdetects GNU tar intermittently (pipe + `pipefail` race).
+
 ### Changed
 - Docker Compose 2.24+ is required (was 2.20).
 - `deploy/compose.yaml` references registry images (`VIGIL_IMAGE_REGISTRY`); local builds moved to

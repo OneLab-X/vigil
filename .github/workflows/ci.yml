@@ -89,6 +89,8 @@ jobs:
         run: |
           shellcheck --version
           shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh deploy/release/*.sh deploy/test/*.sh deploy/get.sh
+      - name: Configuration reference in docs matches env.template
+        run: python3 deploy/release/gen-env-docs.py --check
       - name: Every script supports --help
         run: for s in deploy/scripts/*.sh; do [ "$s" = deploy/scripts/lib.sh ] || bash "$s" --help >/dev/null; done
       - name: Validate compose (release and source modes)
