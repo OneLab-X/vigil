@@ -1,7 +1,9 @@
 # Maintaining this Wiki
 
 The wiki source lives in the main repository under [`docs/wiki/`](https://github.com/OneLab-X/vigil/tree/main/docs/wiki)
-and is published by the **Publish wiki** workflow on every merge to `main`. Edit pages through pull requests, not in
+and is published twice on every merge to `main`: to this wiki by the **Publish wiki** workflow, and as the
+documentation of the website [onelab-x.github.io/vigil](https://onelab-x.github.io/vigil/docs/) by the **Website**
+workflow (`site/`, built with Astro Starlight; preview locally with `pnpm --filter @vigil/site dev`). Edit pages through pull requests, not in
 the wiki web editor — web edits are overwritten on the next sync.
 
 - One Markdown file per page; the file name is the page title (`Event-Explorer.md` → *Event Explorer*).

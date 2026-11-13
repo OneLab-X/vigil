@@ -28,7 +28,10 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git" wiki
+          if ! git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git" wiki; then
+            echo "::error::The wiki repository does not exist yet. Enable Wikis (Settings → General → Features), open the Wiki tab, save any first page, then re-run this workflow."
+            exit 1
+          fi
           rsync -a --delete --exclude .git docs/wiki/ wiki/
           cd wiki
           git config user.name "github-actions[bot]"

@@ -1,0 +1,6 @@
+# generated from docs/wiki by scripts/sync-docs.mjs
+src/content/docs/docs/
+src/sidebar.generated.json
+public/images/
+dist/
+.astro/
