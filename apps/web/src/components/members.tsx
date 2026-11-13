@@ -39,7 +39,7 @@ export function Members() {
   };
 
   return (
-    <Card title="Members" pad={false} className="lg:col-span-2"
+    <Card title="Members" pad={false}
       actions={can && <Button size="sm" onClick={() => { setAdding(!adding); add.reset(); }}>{adding ? "Cancel" : "Add member"}</Button>}>
       {adding && can && (
         <form className="grid gap-2 border-b border-border p-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end" onSubmit={submit}>

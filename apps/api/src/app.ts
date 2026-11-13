@@ -14,6 +14,7 @@ import { internalRoutes } from "./routes/internal.js";
 import { readiness } from "./services/health.js";
 import { modelRoutes } from "./routes/models.js";
 import { operationsRoutes } from "./routes/operations.js";
+import { notificationRoutes } from "./routes/notifications.js";
 import { latencyMiddleware } from "./lib/latency.js";
 
 export function buildApp() {
@@ -29,7 +30,7 @@ export function buildApp() {
   app.get("/healthz", (c) => c.json({ ok: true }));
   // Readiness: dependencies reachable. Returns component status only (no versions of secrets, no hostnames).
   app.get("/readyz", async (c) => { const r = await readiness(); return c.json(r, r.ok ? 200 : 503); });
-  for (const r of [authRoutes, connectionRoutes, dataRoutes, incidentRoutes, governanceRoutes, modelRoutes, operationsRoutes]) app.route("/api/v1", r);
+  for (const r of [authRoutes, connectionRoutes, dataRoutes, incidentRoutes, governanceRoutes, modelRoutes, operationsRoutes, notificationRoutes]) app.route("/api/v1", r);
   app.route("/internal/v1", internalRoutes);
 
   app.doc31("/api/v1/openapi.json", { openapi: "3.1.0", info: { title: "Vigil Agentic SOC API", version: "1.0.0", description: "Versioned REST API. Session-cookie auth + x-vigil-csrf header for mutations." } });

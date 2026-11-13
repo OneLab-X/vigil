@@ -6,6 +6,7 @@ import { pruneLatency } from "./lib/latency.js";
 import { runIngestionJob, scheduleIncremental } from "./services/ingestion.js";
 import { runDetection } from "./services/detection.js";
 import { handleRunTimeout, startAgentRun } from "./services/investigation.js";
+import { handleNotify, handleNotifyChannel, handleNotifySummary } from "./services/notifications.js";
 
 export async function processJob(db: Db, job: { id: string; tenantId: string; type: string; payload: any }) {
   switch (job.type) {
@@ -17,6 +18,9 @@ export async function processJob(db: Db, job: { id: string; tenantId: string; ty
       return;
     }
     case "run_timeout": return handleRunTimeout(db, job.tenantId, job.payload.runId);
+    case "notify": return handleNotify(db, job.tenantId, job.payload);
+    case "notify_channel": return handleNotifyChannel(db, job.tenantId, job.payload);
+    case "notify_summary": return handleNotifySummary(db, job.tenantId, job.payload);
     case "retention": return withTenant(db, { tenantId: job.tenantId }, async (tx) => {
       const [t] = await tx.select({ days: tenants.retentionDays }).from(tenants).where(sql`id = ${job.tenantId}`);
       if (t) await tx.execute(sql`select vigil_purge_expired_events(${job.tenantId}::uuid, ${t.days})`);

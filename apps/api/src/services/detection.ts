@@ -1,4 +1,5 @@
 import { and, eq, gte, inArray, lt, or, sql, isNull, gt } from "drizzle-orm";
+import { enqueueIncidentAlert } from "./notifications.js";
 import { RuleDefinitionSchema, runRules, maxSeverity, type DetectableEvent, type RuleDefinition, type RuleHit, type Severity } from "@vigil/core";
 import { detectionRules, detectionRuns, findings, incidentEvents, incidents, securityEvents, securityKnowledge, withTenant, type Db, type Tx } from "@vigil/db";
 import { audit } from "../lib/audit.js";
@@ -106,10 +107,13 @@ export async function correlate(tx: Tx, tenantId: string, findingIds: string[]):
     )).limit(1);
     let incidentId: string;
     let isNew = false;
+    let raisedTo: Severity | null = null;
     if (open) {
       incidentId = open.id;
+      const sev = maxSeverity(open.severity as Severity, f.severity as Severity);
+      if (sev !== open.severity) raisedTo = sev;
       await tx.update(incidents).set({
-        severity: maxSeverity(open.severity as Severity, f.severity as Severity),
+        severity: sev,
         lastSeen: f.lastSeen > open.lastSeen ? f.lastSeen : open.lastSeen,
         firstSeen: f.firstSeen < open.firstSeen ? f.firstSeen : open.firstSeen, updatedAt: new Date(),
       }).where(eq(incidents.id, open.id));
@@ -127,6 +131,8 @@ export async function correlate(tx: Tx, tenantId: string, findingIds: string[]):
     if (evIds.length) await tx.insert(incidentEvents).values(evIds.map((eventId) => ({ tenantId, incidentId, eventId, findingId: f.id }))).onConflictDoNothing();
     await audit(tx, { tenantId, actorType: "system", actorId: "correlator", action: isNew ? "incident.created" : "incident.finding_attached", targetType: "incident", targetId: incidentId, details: { finding_id: f.id, correlation_key: corr } });
     if (isNew) await pgQueue.enqueue(tx, tenantId, "agent_run", { incidentId, role: "detection_analyst", trigger: "auto" }, { idempotencyKey: `triage:${incidentId}` });
+    if (isNew) await enqueueIncidentAlert(tx, tenantId, incidentId, "incident.created", f.severity as Severity);
+    else if (raisedTo) await enqueueIncidentAlert(tx, tenantId, incidentId, "incident.severity_raised", raisedTo);
     touched.add(incidentId);
   }
   return [...touched];

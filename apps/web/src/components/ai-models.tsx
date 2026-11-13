@@ -38,7 +38,7 @@ export function AiModels() {
   };
 
   return (
-    <Card title="AI models" className="lg:col-span-2" actions={can && <Button size="sm" onClick={() => setAdding(!adding)}>{adding ? "Cancel" : "Add provider"}</Button>}>
+    <Card title="AI models" actions={can && <Button size="sm" onClick={() => setAdding(!adding)}>{adding ? "Cancel" : "Add provider"}</Button>}>
       <div className="space-y-4 text-[13px]">
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
           <div><Label>AI data policy</Label><p className="text-xs text-muted">Checked before every investigation run.</p></div>

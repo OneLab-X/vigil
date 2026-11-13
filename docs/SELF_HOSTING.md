@@ -163,6 +163,8 @@ Configuration lives in `/opt/vigil/.env` (release install) or `deploy/.env` (sou
 | Evidence storage | `VIGIL_S3_REGION` | `us-east-1` | S3 region. |
 | Ingestion | `VIGIL_MAX_PAGES_PER_JOB` | `50` | Maximum API pages one ingestion job fetches before yielding (bounds job duration and API usage). |
 | Ingestion | `VIGIL_INGEST_LAG_MINUTES` | `5` | Incremental polls stop this many minutes before now so late-arriving cloud logs are not missed. |
+| Incident alerts (Settings → Notifications) | `VIGIL_ALERT_CAP` | `20` | Maximum individual alerts per channel per 10 minutes; past it, alerts are held and one summary is sent. |
+| Incident alerts (Settings → Notifications) | `VIGIL_SLACK_WEBHOOK_HOSTS` | *(empty)* | Extra origins allowed for Slack-compatible incoming webhooks, comma-separated (e.g. https://chat.example.com). https://hooks.slack.com is always allowed. Every origin added here can receive alert content. |
 | Cloud identity (read-only) | `VIGIL_GCP_CREDENTIALS_FILE` | *(empty)* | Google Cloud. Leave empty on Compute Engine/GKE: the GCP connector (auth mode ADC) uses the VM's attached service account (roles/logging.viewer, + roles/logging.privateLogViewer for Data Access logs) — no key file. Elsewhere: host path to a Workload Identity Federation credential config (keyless). Avoid service-account keys. |
 | Cloud identity (read-only) | `VIGIL_AWS_PRINCIPAL_ARN` | *(empty)* | AWS principal Vigil runs as (shown in the customer onboarding trust policy). On EC2 this is the instance profile role (deploy/cloud/aws sets it); credentials come from IMDSv2 — never configure access keys. |
 | Cloud identity (read-only) | `VIGIL_AZURE_FEDERATED_TOKEN_FILE` | *(empty)* | Azure workload identity federation outside Azure: host path to a short-lived OIDC token file kept fresh by your platform. On an Azure VM use the connector's "managed identity" auth mode instead — nothing to set here. |
@@ -191,8 +193,8 @@ accessible; the one-time password is not stored anywhere else in plain text. Los
 cd /opt/vigil && sudo docker compose --env-file .env exec api vigil-admin reset-password --email you@example.com
 ```
 
-Next: add colleagues, configure an AI provider (Settings → AI models) — investigations stay deterministic-only until
-you do — and connect a source.
+Next: add colleagues, set up incident alerts (Settings → Notifications), configure an AI provider (Settings → AI
+models) — investigations stay deterministic-only until you do — and connect a source.
 
 ### Adding colleagues
 
@@ -207,7 +209,7 @@ keeps at least one owner, and owners cannot demote or remove themselves.
 |---|---|
 | viewer | read everything in the organization |
 | analyst | + triage incidents, run investigations, review verdicts, propose/approve knowledge |
-| admin | + detection rules, cloud connections, ingestion, agent settings, audit log, operations |
+| admin | + detection rules, cloud connections, ingestion, agent settings, incident alerts, audit log, operations |
 | owner | + manage members |
 
 From the server (e.g. when no owner can sign in):
@@ -219,6 +221,46 @@ cd /opt/vigil && sudo docker compose --env-file .env exec api vigil-admin add-me
 Add `--org <slug>` if the install has more than one organization.
 
 The demo users (`owner@vigil.test` …) come only from `pnpm db:seed`, which refuses to run in production.
+
+### Incident alerts (Slack and email)
+
+Owners and admins set up alerts under **Settings → Notifications**; other roles cannot see or change them. Each
+channel has a minimum severity (default `high`) and the events it wants:
+
+- **New incident** — the correlator opened a new incident.
+- **Severity raised** — an open incident got more severe (new findings, or someone raised it). Each step alerts once.
+
+**Slack:** in Slack, create an app → *Incoming Webhooks* → *Add New Webhook to Workspace* → pick the channel, then paste
+the `https://hooks.slack.com/services/…` URL into **Add Slack**. Only `hooks.slack.com` is accepted unless you list
+other Slack-compatible origins in `VIGIL_SLACK_WEBHOOK_HOSTS`.
+
+**Email (SMTP):**
+
+| Provider | Host | Port / security | Notes |
+|---|---|---|---|
+| Google Workspace / Gmail | `smtp.gmail.com` | 587 STARTTLS | username = the mailbox, password = an app password |
+| Microsoft 365 | `smtp.office365.com` | 587 STARTTLS | SMTP AUTH must be enabled for the mailbox |
+| Amazon SES | `email-smtp.<region>.amazonaws.com` | 587 STARTTLS | SES SMTP credentials; verified `From` address |
+| Internal relay | your relay | 25 / 587 | leave username empty for IP-allowlisted relays |
+
+Use **Send test** after saving. Unencrypted SMTP needs an explicit opt-in and is flagged in the table.
+
+What leaves Vigil in an alert: case number, title, severity, status, primary entity (IP / user / resource), first and
+last seen, rule names and a link to the incident (`VIGIL_WEB_ORIGIN`). Never raw events, evidence, credentials or AI
+output. Turn on **Hide entity values** on a channel to replace the entity with `[redacted]`.
+
+How it behaves:
+
+- Alerts are queued in the same database transaction that creates or escalates the incident and sent by the worker,
+  so a rolled-back change never alerts and re-running detection never alerts twice.
+- A failing channel is retried with backoff (up to 5 attempts) without resending to channels that worked; failures
+  and their (sanitized) errors show in **Recent deliveries**.
+- Each channel sends at most `VIGIL_ALERT_CAP` (default 20) alerts per 10 minutes; the rest are held and one summary
+  ("N more incident alerts…") is sent when the window ends.
+- The webhook URL and SMTP password are encrypted at rest like other secrets, write-only in the UI, and never appear
+  in API responses, logs or the audit log. Changes and tests are audited (`notification_channel.*`).
+- The worker needs outbound access to `hooks.slack.com:443` and/or your SMTP host and port. SMTP hosts that resolve to
+  cloud metadata or link-local addresses are refused, also at send time.
 
 ## 8. Connect your first source
 

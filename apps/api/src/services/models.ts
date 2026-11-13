@@ -11,7 +11,7 @@ export const DATA_POLICIES: DataPolicy[] = ["any", "customer_hosted_only", "disa
 /** Env-key providers are vendor-hosted APIs. */
 const ENV_PROVIDER_HOSTING: Record<string, "external" | "customer_hosted"> = { anthropic: "external", openai: "external", gemini: "external", scripted: "customer_hosted" };
 
-const BLOCKED_HOSTS = new Set(["metadata.google.internal", "metadata", "metadata.azure.com", "instance-data", "instance-data.ec2.internal"]);
+export const BLOCKED_HOSTS = new Set(["metadata.google.internal", "metadata", "metadata.azure.com", "instance-data", "instance-data.ec2.internal"]);
 /**
  * SSRF guard for customer-supplied model endpoints. Private ranges stay allowed (a customer-hosted model on the LAN is
  * the point), but cloud metadata / link-local addresses never are. The agent worker re-checks the resolved IP at call time.

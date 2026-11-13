@@ -539,6 +539,46 @@ export const modelProviders = pgTable("model_providers", {
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("model_providers_tenant_name_uq").on(t.tenantId, t.name)]);
 
+// ---------- notifications ----------
+/**
+ * Incident alert channels (Slack incoming webhook, SMTP email). `config` holds non-secret settings only;
+ * the webhook URL / SMTP password live in vigil_secrets via secretRef.
+ */
+export const notificationChannels = pgTable("notification_channels", {
+  id: id(),
+  tenantId: tenantId(),
+  kind: text("kind").notNull(), // slack | email
+  name: text("name").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  minSeverity: severityEnum("min_severity").notNull().default("high"),
+  events: text("events").array().notNull(),
+  config: jsonb("config").notNull().default({}),
+  secretRef: text("secret_ref"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex("notification_channels_tenant_name_uq").on(t.tenantId, t.name)]);
+
+/** One row per (channel, incident, event[, severity step]); also the flood-control ledger. */
+export const notificationDeliveries = pgTable("notification_deliveries", {
+  id: id(),
+  tenantId: tenantId(),
+  channelId: uuid("channel_id").notNull().references(() => notificationChannels.id, { onDelete: "cascade" }),
+  incidentId: uuid("incident_id").notNull().references(() => incidents.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  dedupeKey: text("dedupe_key").notNull().default(""),
+  status: text("status").notNull().default("pending"), // pending | sent | failed | suppressed
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  summarized: boolean("summarized").notNull().default(false),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex("notification_deliveries_uq").on(t.channelId, t.incidentId, t.event, t.dedupeKey),
+  index("notification_deliveries_channel_idx").on(t.tenantId, t.channelId, t.createdAt),
+]);
+
 // ---------- operations ----------
 /**
  * Per-minute API latency rollups per (tenant, method, route template). Never per-request rows, IPs,
