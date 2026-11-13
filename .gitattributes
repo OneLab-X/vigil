@@ -1,0 +1,3 @@
+# Leave the website source out of GitHub's "Download ZIP" and release source archives (git archive).
+# It is still part of a normal git clone; self-hosted installs never include it.
+site/ export-ignore
