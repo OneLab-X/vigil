@@ -13,6 +13,7 @@ import { publicRun } from "../lib/run-masking.js";
 import { ROLE_TOOLS } from "../services/broker.js";
 import { activeRules, rowToRule } from "../services/detection.js";
 import { ensureAgentDefinitions } from "../services/investigation.js";
+import { changeMemberRole, inviteMember, removeMember } from "../services/tenancy.js";
 
 export const governanceRoutes = newApp();
 
@@ -155,6 +156,35 @@ route(governanceRoutes, "get", "/audit-logs/verify", { summary: "Verify the tena
   }));
 
 route(governanceRoutes, "get", "/members", { summary: "Tenant members", tags: ["settings"] }, async (c) =>
-  tenantTx(c, "read", async (tx) => c.json({ items: await tx.select({ id: users.id, email: users.email, displayName: users.displayName, role: memberships.role }).from(memberships).innerJoin(users, eq(users.id, memberships.userId)) })));
+  tenantTx(c, "read", async (tx) => c.json({ items: await tx.select({ id: users.id, email: users.email, displayName: users.displayName, role: memberships.role, mustChangePassword: users.mustChangePassword, joinedAt: memberships.createdAt })
+    .from(memberships).innerJoin(users, eq(users.id, memberships.userId)).orderBy(asc(memberships.createdAt)) })));
+
+const RoleBody = z.enum(["owner", "admin", "analyst", "viewer"]);
+
+route(governanceRoutes, "post", "/members", {
+  summary: "Add a member (new accounts get a one-time password, returned once)", tags: ["settings"],
+  body: z.object({ email: z.string().trim().min(3).max(254), displayName: z.string().trim().min(1).max(120), role: RoleBody }),
+}, async (c, { body }) =>
+  tenantTx(c, "members:write", async (tx, a) => {
+    const r = await inviteMember(tx, a.tenantId, body);
+    await a.audit({ action: "member.added", targetType: "user", targetId: r.userId, details: { email: body.email.trim().toLowerCase(), role: body.role, newAccount: r.created } });
+    return c.json({ id: r.userId, email: body.email.trim().toLowerCase(), role: body.role, newAccount: r.created, oneTimePassword: r.oneTimePassword });
+  }));
+
+route(governanceRoutes, "patch", "/members/{id}", { summary: "Change a member's role", tags: ["settings"], params: IdParam, body: z.object({ role: RoleBody }) }, async (c, { params, body }) =>
+  tenantTx(c, "members:write", async (tx, a) => {
+    if (params.id === a.user.id) throw badRequest("you cannot change your own role");
+    const r = await changeMemberRole(tx, a.tenantId, params.id, body.role);
+    if (r.from !== r.to) await a.audit({ action: "member.role_changed", targetType: "user", targetId: params.id, details: r });
+    return c.json({ id: params.id, role: r.to });
+  }));
+
+route(governanceRoutes, "delete", "/members/{id}", { summary: "Remove a member from this organization", tags: ["settings"], params: IdParam }, async (c, { params }) =>
+  tenantTx(c, "members:write", async (tx, a) => {
+    if (params.id === a.user.id) throw badRequest("you cannot remove yourself");
+    const r = await removeMember(tx, a.tenantId, params.id);
+    await a.audit({ action: "member.removed", targetType: "user", targetId: params.id, details: r });
+    return c.json({ ok: true });
+  }));
 
 export { rowToRule };
