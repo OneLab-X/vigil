@@ -23,7 +23,7 @@ fi
 # shellcheck disable=SC2016  # expanded inside the container
 PROBE='set -euo pipefail
 ok(){ echo "ok: $*"; }; warn(){ echo "warn: $*"; }; die(){ echo "die: $*" >&2; exit 1; }
-eval "$(sed -n "/^detect_os() {/,/^}/p" /m/deploy/get.sh)"
+eval "$(sed -n -e "/^os_release_field() {/,/^}/p" -e "/^detect_os() {/,/^}/p" /m/deploy/get.sh)"
 VERSION=9.8.7
 detect_os
 [ "$VERSION" = 9.8.7 ] || die "detect_os overwrote VERSION with \"$VERSION\""
