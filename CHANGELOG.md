@@ -11,6 +11,11 @@ Release notes for each GitHub release are taken from the matching section of thi
   (`POST/PATCH/DELETE /api/v1/members`). New accounts get a one-time password shown once; existing accounts are
   linked without changing their password. Last-owner and self-demotion guards; all changes are audited.
 - `vigil-admin add-member --email E --name N --role R [--org SLUG]` for adding members from the server.
+- Incident alerts to Slack (incoming webhooks) and email (SMTP), configured by owners and admins under Settings →
+  Notifications (`/api/v1/notification-channels`, new `notifications:write` permission). Alerts on new incidents and
+  severity increases, per-channel minimum severity, optional entity redaction, send-test, delivery log, per-channel
+  retries and flood control (`VIGIL_ALERT_CAP`, default 20 per 10 minutes, then one summary). Webhook URLs and SMTP
+  passwords are stored encrypted and write-only. New settings: `VIGIL_ALERT_CAP`, `VIGIL_SLACK_WEBHOOK_HOSTS`.
 
 ## [0.1.0] - 2026-11-13
 

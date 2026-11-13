@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { jobs, type Db, type Tx } from "@vigil/db";
 
-export type JobType = "ingest" | "detect" | "agent_run" | "run_timeout" | "retention";
+export type JobType = "ingest" | "detect" | "agent_run" | "run_timeout" | "retention" | "notify" | "notify_channel" | "notify_summary";
 
 /**
  * Durable job queue on Postgres (FOR UPDATE SKIP LOCKED). Interface kept small so a Redis,

@@ -20,10 +20,14 @@
     "@vigil/db": "workspace:*",
     "drizzle-orm": "0.44.7",
     "hono": "4.10.4",
+    "nodemailer": "7.0.10",
     "postgres": "3.4.7",
     "zod": "4.1.12"
   },
   "devDependencies": {
+    "@types/nodemailer": "7.0.3",
+    "@types/smtp-server": "3.5.12",
+    "smtp-server": "3.16.1",
     "vitest": "3.2.4"
   }
 }

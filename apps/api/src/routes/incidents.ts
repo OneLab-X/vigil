@@ -11,6 +11,8 @@ import { publicRun } from "../lib/run-masking.js";
 import { pgQueue } from "../lib/queue.js";
 import { getDb } from "../db.js";
 import { startAgentRun } from "../services/investigation.js";
+import { enqueueIncidentAlert } from "../services/notifications.js";
+import { SEVERITY_ORDER, type Severity } from "@vigil/core";
 
 export const incidentRoutes = newApp();
 
@@ -82,6 +84,7 @@ route(incidentRoutes, "patch", "/incidents/{id}", {
     }
     await tx.update(incidents).set({ ...(body.status ? { status: body.status } : {}), ...(body.severity ? { severity: body.severity } : {}), ...(body.assigneeId !== undefined ? { assigneeId: body.assigneeId } : {}), updatedAt: new Date() }).where(eq(incidents.id, inc.id));
     await a.audit({ action: "incident.updated", targetType: "incident", targetId: inc.id, details: { from: { status: inc.status, severity: inc.severity, assigneeId: inc.assigneeId }, to: body } });
+    if (body.severity && SEVERITY_ORDER[body.severity] > SEVERITY_ORDER[inc.severity as Severity]) await enqueueIncidentAlert(tx, a.tenantId, inc.id, "incident.severity_raised", body.severity);
     return c.json({ ok: true });
   }));
 
