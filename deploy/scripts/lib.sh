@@ -138,10 +138,10 @@ release_download() {
     ok "SHA256SUMS signature verified (cosign)"
   fi
   want="$(awk -v f="$tarball" '{n=$2; sub(/^\*/,"",n)} n==f{print $1}' "$d/SHA256SUMS")"
-  [ -n "$want" ] && [ "$(sha256f "$d/$tarball")" = "$want" ] || { fail "checksum mismatch for $tarball"; return 1; }
+  if [ -z "$want" ] || [ "$(sha256f "$d/$tarball")" != "$want" ]; then fail "checksum mismatch for $tarball"; return 1; fi
   ok "checksum verified: $tarball"
   tar -xzf "$d/$tarball" -C "$d"
-  [ -f "$d/vigil-deploy-$v/compose.yaml" ] && [ -f "$d/vigil-deploy-$v/scripts/upgrade.sh" ] || { fail "release bundle incomplete"; return 1; }
+  if [ ! -f "$d/vigil-deploy-$v/compose.yaml" ] || [ ! -f "$d/vigil-deploy-$v/scripts/upgrade.sh" ]; then fail "release bundle incomplete"; return 1; fi
 }
 semver_cmp() { # prints -1, 0 or 1
   local IFS=.; local -a a b; read -r -a a <<<"$1"; read -r -a b <<<"$2"; local i

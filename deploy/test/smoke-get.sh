@@ -19,9 +19,9 @@ DATA_DIR="${SMOKE_DATA_DIR:-/opt/vigil-smoke}"
 WORK="$(mktemp -d)"
 step() { printf '\n\033[1m### %s\033[0m\n' "$*"; }
 cleanup() {
-  [ -n "${HTTP_PID:-}" ] && kill "$HTTP_PID" 2>/dev/null || true
+  if [ -n "${HTTP_PID:-}" ]; then kill "$HTTP_PID" 2>/dev/null || true; fi
   if [ "$KEEP" = 0 ]; then
-    [ -f "$DATA_DIR/.env" ] && VIGIL_PURGE_CONFIRM="$(hostname)" VIGIL_HOME="$DATA_DIR" bash "$DATA_DIR/scripts/vigil.sh" uninstall --purge --yes >/dev/null 2>&1 || true
+    if [ -f "$DATA_DIR/.env" ]; then VIGIL_PURGE_CONFIRM="$(hostname)" VIGIL_HOME="$DATA_DIR" bash "$DATA_DIR/scripts/vigil.sh" uninstall --purge --yes >/dev/null 2>&1 || true; fi
     rm -rf "$DATA_DIR" "$DATA_DIR".reset-*
     docker rm -f vigil-smoke-registry >/dev/null 2>&1 || true
   fi

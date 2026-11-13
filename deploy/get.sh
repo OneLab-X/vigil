@@ -155,7 +155,7 @@ download_bundle() { # verifies SHA256SUMS and (when cosign is present) its Sigst
   ok "checksum verified: $tarball"
   tar -xzf "$TMP/$tarball" -C "$TMP"
   BUNDLE="$TMP/vigil-deploy-$VERSION"
-  [ -f "$BUNDLE/compose.yaml" ] && [ -x "$BUNDLE/scripts/install.sh" ] || die "release bundle is incomplete"
+  if [ ! -f "$BUNDLE/compose.yaml" ] || [ ! -x "$BUNDLE/scripts/install.sh" ]; then die "release bundle is incomplete"; fi
 }
 
 install_cli() {
