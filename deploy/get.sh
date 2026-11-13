@@ -64,19 +64,21 @@ fetch() { curl -fsSL --proto '=https,http' --retry 3 --retry-delay 2 --connect-t
 
 detect_os() {
   [ -r /etc/os-release ] || die "cannot detect the operating system (/etc/os-release missing)"
+  # Read os-release in a subshell: sourcing it here would overwrite VERSION (the --version flag) with the OS version.
+  local fields
   # shellcheck disable=SC1091
-  . /etc/os-release
-  OS_ID="${ID:-}"; OS_VER="${VERSION_ID:-}"
+  fields="$(. /etc/os-release && printf '%s\n%s\n%s\n%s' "${ID:-}" "${VERSION_ID:-}" "${VERSION_CODENAME:-}" "${PRETTY_NAME:-}")"
+  { IFS= read -r OS_ID; IFS= read -r OS_VER; IFS= read -r OS_CODENAME; IFS= read -r OS_NAME; } <<<"$fields" || true
   case "$OS_ID:$OS_VER" in
     ubuntu:22.04|ubuntu:24.04) PKG=apt ;;
     debian:12*) PKG=apt ;;
     rhel:9*|almalinux:9*|rocky:9*) PKG=dnf ;;
     amzn:2023*) PKG=dnf ;;
     *) if docker compose version >/dev/null 2>&1; then
-         warn "untested OS ${PRETTY_NAME:-$OS_ID $OS_VER}; Docker + Compose are present, continuing"; PKG=none
-       else die "unsupported OS ${PRETTY_NAME:-$OS_ID $OS_VER}: install Docker Engine + Compose v2 yourself and re-run"; fi ;;
+         warn "untested OS ${OS_NAME:-$OS_ID $OS_VER}; Docker + Compose are present, continuing"; PKG=none
+       else die "unsupported OS ${OS_NAME:-$OS_ID $OS_VER}: install Docker Engine + Compose v2 yourself and re-run"; fi ;;
   esac
-  ok "OS: ${PRETTY_NAME:-$OS_ID $OS_VER} ($(uname -m))"
+  ok "OS: ${OS_NAME:-$OS_ID $OS_VER} ($(uname -m))"
 }
 
 install_base_packages() {
@@ -106,9 +108,8 @@ install_docker() {
       install -m 0755 -d /etc/apt/keyrings
       fetch "https://download.docker.com/linux/$OS_ID/gpg" /etc/apt/keyrings/docker.asc
       chmod a+r /etc/apt/keyrings/docker.asc
-      # shellcheck disable=SC1091
       printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
-        "$(dpkg --print-architecture)" "$OS_ID" "$(. /etc/os-release && echo "$VERSION_CODENAME")" > /etc/apt/sources.list.d/docker.list
+        "$(dpkg --print-architecture)" "$OS_ID" "$OS_CODENAME" > /etc/apt/sources.list.d/docker.list
       DEBIAN_FRONTEND=noninteractive apt-get update -qq
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null ;;
     rhel|almalinux|rocky)
