@@ -37,10 +37,10 @@ grep -q "^VIGIL_VERSION=$VERSION$" "$b/env.template" || { echo "env.template ren
 
 cp "$DEPLOY_DIR"/scripts/*.sh "$b/scripts/"
 cp "$DEPLOY_DIR"/postgres/* "$b/postgres/"
-cp "$DEPLOY_DIR/empty-credentials.json" "$b/"
-[ -d "$DEPLOY_DIR/proxy" ] && cp -R "$DEPLOY_DIR/proxy" "$b/"
+cp "$DEPLOY_DIR/empty-credentials.json" "$DEPLOY_DIR/compose.tls.yaml" "$b/"
+cp -R "$DEPLOY_DIR/proxy" "$b/"
 printf '%s\n' "$VERSION" > "$b/VERSION"
-chmod 755 "$b"/scripts/*.sh "$b"/postgres/*.sh
+chmod 755 "$b"/scripts/*.sh "$b"/postgres/*.sh "$b"/proxy/*.sh
 
 # Reproducible-ish tarball: fixed owner and sorted entries.
 tar_opts=(--owner=0 --group=0 --numeric-owner)

@@ -56,9 +56,14 @@ image_ref() { # image_ref api|agents|web VERSION_OR_TAG
   if [ "$INSTALL_MODE" = source ]; then printf 'vigil/%s:%s\n' "$1" "$2"; else printf '%s/vigil-%s:%s\n' "$(image_registry)" "$1" "$2"; fi
 }
 
+# TLS proxy is on when a domain is set and VIGIL_TLS_MODE is acme (default), custom or internal.
+tls_mode() { local m; m="$(env_get VIGIL_TLS_MODE)"; if [ -z "$(env_get VIGIL_DOMAIN)" ]; then echo off; else echo "${m:-acme}"; fi; }
+tls_enabled() { [ "$(tls_mode)" != off ]; }
+
 dc() {
   local files=(-f "$DEPLOY_DIR/compose.yaml")
   [ "$INSTALL_MODE" = source ] && files+=(-f "$DEPLOY_DIR/compose.build.yaml")
+  tls_enabled && files+=(-f "$DEPLOY_DIR/compose.tls.yaml")
   docker compose --project-directory "$DEPLOY_DIR" "${files[@]}" --env-file "$ENV_FILE" "$@"
 }
 

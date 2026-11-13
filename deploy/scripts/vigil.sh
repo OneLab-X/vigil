@@ -81,7 +81,7 @@ cmd_upgrade() {
 
   info "installing release $to files into $DEPLOY_DIR"
   local f
-  for f in compose.yaml env.template VERSION empty-credentials.json; do install -m 0644 "$bundle/$f" "$DEPLOY_DIR/$f.new"; mv "$DEPLOY_DIR/$f.new" "$DEPLOY_DIR/$f"; done
+  for f in compose.yaml compose.tls.yaml env.template VERSION empty-credentials.json; do install -m 0644 "$bundle/$f" "$DEPLOY_DIR/$f.new"; mv "$DEPLOY_DIR/$f.new" "$DEPLOY_DIR/$f"; done
   for f in scripts postgres proxy; do
     [ -d "$bundle/$f" ] || continue
     rm -rf "$DEPLOY_DIR/$f.new" "$DEPLOY_DIR/$f.old"; cp -R "$bundle/$f" "$DEPLOY_DIR/$f.new"

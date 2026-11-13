@@ -43,10 +43,12 @@ else
   ! grep -qE '^[A-Z0-9_]+=__GENERATE' "$ENV_FILE" || die "secret generation incomplete"
   env_set VIGIL_VERSION "$(target_version)"
   # optional overrides from the environment at install time
-  for k in VIGIL_WEB_PORT VIGIL_WEB_BIND VIGIL_WEB_ORIGIN VIGIL_IMAGE_REGISTRY GEMINI_API_KEY; do
+  for k in VIGIL_WEB_PORT VIGIL_WEB_BIND VIGIL_WEB_ORIGIN VIGIL_IMAGE_REGISTRY VIGIL_INSTALL_MODE GEMINI_API_KEY \
+           VIGIL_DOMAIN VIGIL_TLS_MODE VIGIL_ACME_EMAIL VIGIL_TLS_CERT_FILE VIGIL_TLS_KEY_FILE; do
     if [ -n "${!k:-}" ]; then env_set "$k" "${!k}"; fi
   done
   if [ -n "${VIGIL_WEB_PORT:-}" ] && [ -z "${VIGIL_WEB_ORIGIN:-}" ]; then env_set VIGIL_WEB_ORIGIN "http://localhost:$VIGIL_WEB_PORT"; fi
+  if tls_enabled && [ -z "${VIGIL_WEB_ORIGIN:-}" ]; then env_set VIGIL_WEB_ORIGIN "https://$(env_get VIGIL_DOMAIN)"; fi
   ok "$ENV_FILE written (mode 600). Back it up securely: it holds the key that decrypts stored credentials."
 fi
 
@@ -80,7 +82,8 @@ else
 fi
 
 printf '\n%s\n' "Vigil $version is running."
-printf '  URL:   %s  (bound to %s:%s)\n' "$(env_get VIGIL_WEB_ORIGIN)" "$(env_get VIGIL_WEB_BIND)" "$(env_get VIGIL_WEB_PORT)"
+if tls_enabled; then printf '  URL:   %s  (HTTPS via the built-in proxy, TLS mode %s)\n' "$(env_get VIGIL_WEB_ORIGIN)" "$(tls_mode)"
+else printf '  URL:   %s  (bound to %s:%s)\n' "$(env_get VIGIL_WEB_ORIGIN)" "$(env_get VIGIL_WEB_BIND)" "$(env_get VIGIL_WEB_PORT)"; fi
 if [ -n "${otp:-}" ]; then
   if [ -n "$PASSWORD_FILE" ]; then
     (umask 077; printf '%s\n' "$otp" > "$PASSWORD_FILE"); chmod 600 "$PASSWORD_FILE"
@@ -90,7 +93,7 @@ if [ -n "${otp:-}" ]; then
   fi
   printf '  Sign in and change it immediately; it is not stored anywhere else in plain text.\n'
 fi
-if [ "$(env_get VIGIL_WEB_BIND)" = 127.0.0.1 ]; then
-  printf '  The UI listens on this host only. Put a TLS reverse proxy in front, or reach it over SSH:\n'
+if ! tls_enabled && [ "$(env_get VIGIL_WEB_BIND)" = 127.0.0.1 ]; then
+  printf '  The UI listens on this host only. Enable HTTPS with VIGIL_DOMAIN (get.sh --domain), use your own TLS proxy, or SSH:\n'
   printf '    ssh -L %s:127.0.0.1:%s <user>@<this-host>   then open http://localhost:%s\n' "$(env_get VIGIL_WEB_PORT)" "$(env_get VIGIL_WEB_PORT)" "$(env_get VIGIL_WEB_PORT)"
 fi
