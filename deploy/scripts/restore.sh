@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 # Restore a backup made by backup.sh:  deploy/scripts/restore.sh <backup-dir> [--yes]
 # Replaces the current database and bundled evidence store. Destructive; asks for confirmation.
+set -euo pipefail
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
-dir="${1:-}"; [ -n "$dir" ] && [ -f "$dir/manifest.json" ] || die "usage: restore.sh <backup-dir> [--yes]"
-[ "${2:-}" = "--yes" ] && export ASSUME_YES=1
+usage() { cat <<EOF
+Restore a backup made by backup.sh. REPLACES the current database and bundled evidence store.
+
+Usage: $(basename "$0") <backup-dir> [--yes]
+EOF
+}
+case "${1:-}" in -h|--help) usage; exit 0;; esac
+dir=""
+while [ $# -gt 0 ]; do case "$1" in --yes) export ASSUME_YES=1; shift;; -*) usage >&2; die "unknown option $1";; *) dir="$1"; shift;; esac; done
+{ [ -n "$dir" ] && [ -f "$dir/manifest.json" ]; } || { usage >&2; die "backup directory with manifest.json required"; }
 dir="$(cd "$dir" && pwd)"
 
 info "verifying backup checksums"

@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 # Consistent backup: database + evidence + configuration.  deploy/scripts/backup.sh [--online]
 # Default briefly stops api/worker (writers) so the database and evidence store match exactly.
+set -euo pipefail
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
+usage() { cat <<EOF
+Consistent backup of database, bundled evidence store and configuration into $BACKUP_ROOT/<timestamp>.
+By default api/worker (writers) are paused briefly so database and evidence match exactly.
+
+Usage: $(basename "$0") [--online]
+EOF
+}
+case "${1:-}" in -h|--help) usage; exit 0;; esac
 require_env
-ONLINE=0; [ "${1:-}" = "--online" ] && ONLINE=1
+ONLINE=0
+while [ $# -gt 0 ]; do case "$1" in --online) ONLINE=1; shift;; *) usage >&2; die "unknown option $1";; esac; done
 ts="$(date -u +%Y%m%dT%H%M%SZ)"; dir="$BACKUP_ROOT/$ts"
 umask 077; mkdir -p "$dir"
 restart=()

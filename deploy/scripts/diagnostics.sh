@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Collect installation diagnostics into a local archive. Nothing is uploaded anywhere.
 # Secrets from deploy/.env and common credential patterns are masked; security event content is not collected.
+set -euo pipefail
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
+usage() { cat <<EOF
+Collect installation diagnostics into a local .tar.gz (secrets masked, no security event content).
+Nothing is uploaded anywhere.
+
+Usage: $(basename "$0")
+EOF
+}
+case "${1:-}" in -h|--help) usage; exit 0;; esac
 ts="$(date -u +%Y%m%dT%H%M%SZ)"; out="$DEPLOY_DIR/diagnostics-$ts"; umask 077; mkdir -p "$out"
 redact() {
   local sed_args=(-E -e 's/(AKIA[0-9A-Z]{16})/AKIA****************/g' -e 's/(AIza[0-9A-Za-z_-]{35})/AIza****/g'
@@ -14,7 +24,7 @@ redact() {
   fi
   sed "${sed_args[@]}"
 }
-{ echo "collected: $ts"; uname -a; docker version --format 'docker {{.Server.Version}}' 2>&1; docker compose version 2>&1; cat "$REPO_DIR/VERSION"; } > "$out/versions.txt"
+{ echo "collected: $ts"; uname -a; docker version --format 'docker {{.Server.Version}}' 2>&1; docker compose version 2>&1; echo "deploy files: $(target_version) ($INSTALL_MODE mode)"; } > "$out/versions.txt"
 "$DEPLOY_DIR/scripts/preflight.sh" > "$out/preflight.txt" 2>&1 || true
 if [ -f "$ENV_FILE" ]; then
   sed -E 's/^([A-Z_]*(PASSWORD|SECRET|TOKEN|_KEY|API_KEY)[A-Z_]*)=.+/\1=****/' "$ENV_FILE" > "$out/env.masked"

@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: core + api tests, typecheck
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create Vigil roles and test database (mirrors scripts/db.sh)
+        run: |
+          psql -h 127.0.0.1 -p 54329 -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          create role vigil_owner login password 'vigil_owner_dev' nosuperuser bypassrls;
+          create role vigil_app login password 'vigil_app_dev' nosuperuser nobypassrls;
+          create database vigil_test owner vigil_owner;
+          \c vigil_test
+          create extension if not exists vector;
+          create extension if not exists pgcrypto;
+          SQL
+      - name: Migrate test database
+        run: pnpm --filter @vigil/db migrate
+        env:
+          VIGIL_OWNER_DATABASE_URL: postgres://vigil_owner:vigil_owner_dev@127.0.0.1:54329/vigil_test
+      - run: pnpm typecheck
+      - run: pnpm --filter @vigil/core test
+      - run: pnpm --filter @vigil/api test
+
+  web:
+    name: web typecheck + build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @vigil/web
+      - run: pnpm --filter @vigil/web typecheck
+      - run: pnpm --filter @vigil/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  agents:
+    name: agents pytest
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/agents
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --frozen --python 3.13
+      - run: uv run pytest
+
+  deploy:
+    name: deploy scripts + compose
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh $(ls deploy/*.sh 2>/dev/null)
+      - name: Every script supports --help
+        run: for s in deploy/scripts/*.sh; do [ "$s" = deploy/scripts/lib.sh ] || bash "$s" --help >/dev/null; done
+      - name: Validate compose (release and source modes)
+        run: |
+          docker compose -f deploy/compose.yaml --env-file deploy/env.template config -q
+          docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template config -q
+      - name: No unpinned images
+        run: |
+          imgs=$(docker compose -f deploy/compose.yaml --env-file deploy/env.template config --images)
+          echo "$imgs"
+          ! echo "$imgs" | grep -Eq ':latest$|^[^:]+$' || { echo "::error::unpinned image in compose.yaml"; exit 1; }
+          awk 'toupper($1)=="FROM"{img=$2; if (toupper($3)=="AS") stage[$4]=1; if (!(img in stage) && (img !~ /:/ || img ~ /:latest$/)) {print FILENAME": unpinned base image "img; bad=1}} END{exit bad}' deploy/docker/*.Dockerfile
+
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git --config /repo/.gitleaks.toml --redact --verbose /repo
+
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Every commit has Signed-off-by matching its author
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            author="$(git log -1 --format='%an <%ae>' "$c")"
+            if ! git log -1 --format='%B' "$c" | grep -qiF "Signed-off-by: $author"; then
+              echo "::error::commit $c is missing 'Signed-off-by: $author' (use git commit -s; see CONTRIBUTING.md)"; bad=1
+            fi
+          done
+          exit $bad
