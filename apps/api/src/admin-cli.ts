@@ -61,7 +61,7 @@ try {
     });
     console.log(`added ${email} to "${org.name}" as ${role}`);
     if (r.oneTimePassword) {
-      console.log(`one-time password: ${r.oneTimePassword}`);
+      console.log("one-time password was generated for this user.");
       console.log("share it privately; they must change it at first sign-in. It is not stored anywhere in plain text.");
     } else console.log("existing account: they sign in with their current password and can switch to this organization.");
   } else if (cmd === "reset-password") {
