@@ -100,3 +100,52 @@ fetch_images() { # fetch_images VERSION
 
 readyz() { dc exec -T api node -e "fetch('http://127.0.0.1:8080/readyz').then(r=>r.json()).then(j=>{console.log(JSON.stringify(j));process.exit(j.ok?0:1)}).catch(e=>{console.error(String(e));process.exit(1)})"; }
 latest_backup() { find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*' | sort | tail -1; }
+
+# Add settings introduced by a newer env.template to an existing .env (never touches existing values;
+# __GENERATE__ placeholders get fresh random values). Existing secrets, incl. VIGIL_SECRET_KEY, are never regenerated.
+env_merge_template() {
+  require_env
+  local line k v added=()
+  while IFS= read -r line; do
+    [[ "$line" =~ ^([A-Z0-9_]+)=(.*)$ ]] || continue
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
+    grep -qE "^$k=" "$ENV_FILE" && continue
+    case "$v" in __GENERATE_HEX32__) v="$(openssl rand -hex 32)";; __GENERATE__) v="$(openssl rand -hex 24)";; esac
+    env_set "$k" "$v"; added+=("$k")
+  done < "$DEPLOY_DIR/env.template"
+  if [ ${#added[@]} -gt 0 ]; then ok "added new settings to .env with defaults: ${added[*]}"; fi
+}
+
+# ---- release assets (release mode) ----
+VIGIL_REPO="${VIGIL_REPO:-OneLab-X/vigil}"
+RELEASE_BASE_URL="${VIGIL_RELEASE_BASE_URL:-https://github.com/$VIGIL_REPO/releases/download}"
+RELEASE_API_URL="${VIGIL_RELEASE_API_URL:-https://api.github.com/repos/$VIGIL_REPO/releases/latest}"
+fetch_url() { curl -fsSL --proto '=https,http' --retry 3 --retry-delay 2 --connect-timeout 15 -o "$2" "$1"; }
+latest_release_version() {
+  local tmp v; tmp="$(mktemp)"
+  fetch_url "$RELEASE_API_URL" "$tmp" || { rm -f "$tmp"; return 1; }
+  v="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"].lstrip("v"))' "$tmp" 2>/dev/null || true)"; rm -f "$tmp"
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && printf '%s\n' "$v"
+}
+# release_download VERSION DIR → extracts DIR/vigil-deploy-VERSION after verifying SHA256SUMS (+ its signature if cosign exists)
+release_download() {
+  local v="$1" d="$2" base="$RELEASE_BASE_URL/v$1" tarball="vigil-deploy-$1.tar.gz" want
+  fetch_url "$base/SHA256SUMS" "$d/SHA256SUMS" || { fail "release v$v not found at $base"; return 1; }
+  fetch_url "$base/$tarball" "$d/$tarball" || { fail "could not download $tarball"; return 1; }
+  if command -v cosign >/dev/null 2>&1 && fetch_url "$base/SHA256SUMS.sigstore.json" "$d/SHA256SUMS.sigstore.json" 2>/dev/null; then
+    cosign verify-blob --bundle "$d/SHA256SUMS.sigstore.json" --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$d/SHA256SUMS" >/dev/null 2>&1 || { fail "SHA256SUMS signature verification FAILED"; return 1; }
+    ok "SHA256SUMS signature verified (cosign)"
+  fi
+  want="$(awk -v f="$tarball" '{n=$2; sub(/^\*/,"",n)} n==f{print $1}' "$d/SHA256SUMS")"
+  if [ -z "$want" ] || [ "$(sha256f "$d/$tarball")" != "$want" ]; then fail "checksum mismatch for $tarball"; return 1; fi
+  ok "checksum verified: $tarball"
+  tar -xzf "$d/$tarball" -C "$d"
+  if [ ! -f "$d/vigil-deploy-$v/compose.yaml" ] || [ ! -f "$d/vigil-deploy-$v/scripts/upgrade.sh" ]; then fail "release bundle incomplete"; return 1; fi
+}
+semver_cmp() { # prints -1, 0 or 1
+  local IFS=.; local -a a b; read -r -a a <<<"$1"; read -r -a b <<<"$2"; local i
+  for i in 0 1 2; do
+    if [ "${a[$i]:-0}" -lt "${b[$i]:-0}" ]; then echo -1; return; fi
+    if [ "${a[$i]:-0}" -gt "${b[$i]:-0}" ]; then echo 1; return; fi
+  done; echo 0; }

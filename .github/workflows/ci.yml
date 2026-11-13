@@ -88,7 +88,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh $(ls deploy/*.sh 2>/dev/null)
+          shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh deploy/release/*.sh deploy/test/*.sh deploy/get.sh
       - name: Every script supports --help
         run: for s in deploy/scripts/*.sh; do [ "$s" = deploy/scripts/lib.sh ] || bash "$s" --help >/dev/null; done
       - name: Validate compose (release and source modes)
@@ -133,3 +133,15 @@ jobs:
             fi
           done
           exit $bad
+
+  installer-smoke:
+    name: get.sh installer smoke test
+    needs: [deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build images from this commit
+        run: docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template build
+      - name: Install with get.sh from a local registry + asset server; assert readyz, login, rerun, backup, upgrade
+        run: sudo bash deploy/test/smoke-get.sh
