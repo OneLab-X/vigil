@@ -1,0 +1,300 @@
+---
+// Landing page (https://onelab-x.github.io/vigil/). Docs live under /docs/ (Starlight, generated from docs/wiki).
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+const img = (n: string) => `${base}images/${n}.webp`;
+const repo = "https://github.com/OneLab-X/vigil";
+const install = "curl -fsSL https://github.com/OneLab-X/vigil/releases/download/v0.1.0/get.sh | sudo bash -s -- --version 0.1.0";
+
+const steps = [
+  { n: "01", t: "Collect", d: "Read-only, keyless connectors pull audit and platform logs into one normalized schema." },
+  { n: "02", t: "Detect", d: "Deterministic, versioned rules with MITRE mapping turn events into findings. No LLM decides what is suspicious." },
+  { n: "03", t: "Correlate", d: "Findings for the same IP, identity or resource become one incident instead of a pile of alerts." },
+  { n: "04", t: "Investigate", d: "AI agents gather evidence through a governed tool broker and return a verdict where every claim cites a stored event." },
+  { n: "05", t: "Decide & learn", d: "A human approves the verdict and actions. Feedback becomes knowledge only after a second person approves it." },
+];
+const features = [
+  { t: "Read-only by design", d: "Workload identity, instance roles and managed identities instead of keys. Connection tests flag over-privileged credentials." },
+  { t: "Evidence you can check", d: "Raw records are stored write-once and hash-verified. Every AI claim links to the event behind it, or the run is rejected." },
+  { t: "AI that stays on a leash", d: "Agents hold no database or cloud credentials, use an allowlisted tool set per role, and see masked identifiers by default." },
+  { t: "Your models, your data", d: "Use Gemini, Anthropic, OpenAI or any OpenAI-compatible endpoint such as Ollama. A data policy can restrict runs to models you host." },
+  { t: "Humans make the call", d: "Verdicts, recommended actions and new knowledge all wait for approval. Vigil never executes remediation." },
+  { t: "Built for isolation", d: "Postgres row-level security per organization, encrypted secrets, RBAC and a hash-chained audit log of every change." },
+];
+const connectors = ["Google Cloud", "AWS", "Microsoft Azure", "Datadog", "New Relic"];
+const gallery = [
+  { id: "incident", label: "Incident workspace", src: "04-incident-detail", alt: "Incident workspace with an AI verdict, timeline, evidence and recommended actions" },
+  { id: "overview", label: "Overview", src: "02-overview", alt: "Overview dashboard with incident counts, detection trend and ingestion health" },
+  { id: "rules", label: "Detection rules", src: "12-detection-rules", alt: "Deterministic detection rules with severity, MITRE techniques and versions" },
+  { id: "event", label: "Event detail", src: "09-event-drawer", alt: "A security event with its normalized fields and the original record" },
+  { id: "connections", label: "Connections", src: "11-add-connection", alt: "Choosing a cloud or log platform to connect" },
+  { id: "alerts", label: "Alerts", src: "24-settings-notifications", alt: "Slack and email incident alert channels" },
+];
+const docs = [
+  { t: "Getting started", d: "Install, first sign-in and first steps.", h: "docs/getting-started/" },
+  { t: "Incidents", d: "Work a case from detection to decision.", h: "docs/incidents/" },
+  { t: "Connections", d: "Connect clouds and log platforms read-only.", h: "docs/connections/" },
+  { t: "Roles & permissions", d: "Who can see and change what.", h: "docs/roles-and-permissions/" },
+];
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vigil — open-source AI security operations for your clouds</title>
+  <meta name="description" content="Vigil reads your cloud audit logs with read-only credentials, detects threats with deterministic rules, has AI agents investigate with verifiable evidence, and leaves the decision to a human. Self-hosted, Apache-2.0." />
+  <meta property="og:title" content="Vigil — open-source AI security operations" />
+  <meta property="og:description" content="Read-only cloud signals, deterministic detection, evidence-backed AI investigation, human decisions. Self-hosted." />
+  <meta property="og:image" content={new URL(img("02-overview"), Astro.site).href} />
+  <meta name="theme-color" content="#4f46e5" />
+  <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+  <link rel="canonical" href={new URL(base, Astro.site).href} />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a class="brand" href={base} aria-label="Vigil home">
+        <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#4f46e5"/><circle cx="16" cy="16" r="9" stroke="#fff" stroke-width="2" fill="none" opacity=".55"/><circle cx="16" cy="16" r="5" stroke="#fff" stroke-width="2" fill="none"/><circle cx="16" cy="16" r="1.8" fill="#fff"/><path d="M16 16 L24 9" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Vigil</span>
+      </a>
+      <nav class="links" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href={`${base}docs/`}>Docs</a>
+        <a class="gh" href={repo}>GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap hero-in">
+        <p class="eyebrow">Open source · Self-hosted · Apache-2.0</p>
+        <h1>Security operations for your clouds, <em>with AI you can audit.</em></h1>
+        <p class="lede">Vigil reads your cloud and log-platform audit data with read-only credentials, detects threats with deterministic rules, has AI agents investigate every incident with evidence you can verify — and leaves the decision to a human.</p>
+        <div class="cta">
+          <a class="btn primary" href={`${base}docs/getting-started/`}>Get started</a>
+          <a class="btn" href={repo}>View on GitHub</a>
+        </div>
+        <div class="shot hero-shot">
+          <picture>
+            <source srcset={img("27-dark-overview")} media="(prefers-color-scheme: dark)" />
+            <img src={img("02-overview")} alt="Vigil overview dashboard showing open incidents, detection trend and ingestion health" width="1600" height="1045" fetchpriority="high" />
+          </picture>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" aria-label="Supported sources">
+      <div class="wrap band-in">
+        <span class="muted">Reads from</span>
+        <ul class="chips">{connectors.map((c) => <li>{c}</li>)}</ul>
+      </div>
+    </section>
+
+    <section id="how" class="sec">
+      <div class="wrap">
+        <h2>From cloud signal to human decision</h2>
+        <p class="sub">Every step is deterministic, recorded and reviewable. AI helps investigate; it never decides or acts on its own.</p>
+        <ol class="steps">
+          {steps.map((s) => <li><span class="num">{s.n}</span><h3>{s.t}</h3><p>{s.d}</p></li>)}
+        </ol>
+      </div>
+    </section>
+
+    <section id="features" class="sec alt">
+      <div class="wrap">
+        <h2>Built for teams that have to show their work</h2>
+        <div class="grid">
+          {features.map((f) => <article class="card"><h3>{f.t}</h3><p>{f.d}</p></article>)}
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="wrap">
+        <h2>See it in action</h2>
+        <p class="sub">Screens from a demo installation with synthetic data.</p>
+        <div class="tabs" role="tablist" aria-label="Screenshots">
+          {gallery.map((g, i) => <button role="tab" id={`tab-${g.id}`} aria-controls={`panel-${g.id}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{g.label}</button>)}
+        </div>
+        {gallery.map((g, i) => (
+          <div class="shot panel" role="tabpanel" id={`panel-${g.id}`} aria-labelledby={`tab-${g.id}`} hidden={i !== 0}>
+            <img src={img(g.src)} alt={g.alt} loading="lazy" width="1600" height="1000" />
+          </div>
+        ))}
+        <p class="more"><a href={`${base}docs/`}>Tour every screen in the docs →</a></p>
+      </div>
+    </section>
+
+    <section class="sec alt">
+      <div class="wrap split">
+        <div>
+          <h2>Running in five minutes</h2>
+          <p class="sub left">One command on a fresh Linux VM — on AWS, Google Cloud, Azure or your own hardware. It installs Docker if needed, verifies checksums and signatures, generates secrets locally and creates your first owner.</p>
+          <ul class="ticks">
+            <li>2 vCPU / 4 GiB minimum</li>
+            <li>Ubuntu, Debian, RHEL-family or Amazon Linux</li>
+            <li>Backup, restore, upgrade and rollback built in</li>
+          </ul>
+          <a class="btn" href="https://github.com/OneLab-X/vigil/blob/main/docs/SELF_HOSTING.md">Self-hosting guide</a>
+        </div>
+        <div class="term" aria-label="Install command">
+          <div class="term-bar"><span></span><span></span><span></span></div>
+          <pre><code><span class="prompt">$</span> {install}</code></pre>
+          <button class="copy" type="button" data-copy={install}>Copy</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="wrap">
+        <h2>Documentation</h2>
+        <div class="grid four">
+          {docs.map((d) => <a class="card link" href={`${base}${d.h}`}><h3>{d.t}</h3><p>{d.d}</p></a>)}
+        </div>
+      </div>
+    </section>
+
+    <section class="final">
+      <div class="wrap final-in">
+        <h2>Keep watch over your clouds — on your own terms.</h2>
+        <div class="cta">
+          <a class="btn primary" href={`${base}docs/getting-started/`}>Get started</a>
+          <a class="btn ghost" href={repo}>Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <span>© OneLab-X · Vigil is open source under Apache-2.0</span>
+      <nav aria-label="Footer">
+        <a href={`${base}docs/`}>Docs</a>
+        <a href={repo}>GitHub</a>
+        <a href={`${repo}/blob/main/CHANGELOG.md`}>Changelog</a>
+        <a href={`${repo}/security/policy`}>Security</a>
+        <a href={`${repo}/blob/main/LICENSE`}>License</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const select = (t: HTMLButtonElement) => {
+      tabs.forEach((x) => { const on = x === t; x.setAttribute("aria-selected", String(on)); x.tabIndex = on ? 0 : -1;
+        document.getElementById(x.getAttribute("aria-controls")!)!.hidden = !on; });
+      t.focus();
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener("click", () => select(t));
+      t.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") select(tabs[(i + 1) % tabs.length]);
+        if (e.key === "ArrowLeft") select(tabs[(i - 1 + tabs.length) % tabs.length]);
+      });
+    });
+    document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); } catch { /* clipboard blocked */ }
+    }));
+  </script>
+</body>
+</html>
+
+<style is:global>
+  :root {
+    --bg: #ffffff; --bg-alt: #f6f7fb; --fg: #0f172a; --muted: #5b6475; --line: #e4e7ef; --card: #ffffff;
+    --accent: #4f46e5; --accent-fg: #ffffff; --accent-soft: #eef0ff; --term: #0b1020; --term-fg: #e2e8f0;
+    --radius: 14px; --shadow: 0 1px 2px rgb(15 23 42 / .06), 0 12px 40px -12px rgb(15 23 42 / .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0b0d14; --bg-alt: #10131c; --fg: #e6e8ef; --muted: #9aa3b5; --line: #222737; --card: #141826;
+      --accent: #818cf8; --accent-fg: #0b0d14; --accent-soft: #1b1f3a; --term: #05070d; --shadow: 0 12px 40px -12px rgb(0 0 0 / .6); }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  a { color: inherit; }
+  img { max-width: 100%; height: auto; display: block; }
+  h1, h2, h3 { line-height: 1.15; letter-spacing: -0.02em; margin: 0; }
+  .wrap { width: 100%; max-width: 1160px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+  .skip { position: absolute; left: -9999px; } .skip:focus { left: 16px; top: 12px; background: var(--card); padding: 8px 12px; border-radius: 8px; z-index: 10; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .muted { color: var(--muted); }
+
+  .nav { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+  .nav-in { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; text-decoration: none; }
+  .links { display: flex; gap: 4px; align-items: center; font-size: 14px; }
+  .links a { text-decoration: none; color: var(--muted); padding: 6px 10px; border-radius: 8px; }
+  .links a:hover { color: var(--fg); background: var(--bg-alt); }
+  .links .gh { color: var(--fg); border: 1px solid var(--line); }
+  @media (max-width: 640px) { .links a:not(.gh):not([href$="docs/"]) { display: none; } }
+
+  .hero { padding: 72px 0 0; background: radial-gradient(1200px 500px at 50% -10%, var(--accent-soft), transparent 70%); text-align: center; overflow: hidden; }
+  .eyebrow { display: inline-block; margin: 0 0 18px; font-size: 13px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 6vw, 60px); max-width: 920px; margin: 0 auto; font-weight: 800; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede { max-width: 720px; margin: 20px auto 0; font-size: clamp(16px, 2.2vw, 19px); color: var(--muted); }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid var(--line); background: var(--card); }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .shot { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--card); box-shadow: var(--shadow); }
+  .hero-shot { margin: 48px auto -1px; max-width: 1080px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 0; }
+
+  .band { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg-alt); }
+  .band-in { display: flex; align-items: center; gap: 16px; padding-top: 18px; padding-bottom: 18px; flex-wrap: wrap; justify-content: center; font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .chips li { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-weight: 600; }
+
+  .sec { padding: 88px 0; }
+  .sec.alt { background: var(--bg-alt); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(26px, 4vw, 38px); text-align: center; font-weight: 800; }
+  .sub { max-width: 680px; margin: 14px auto 0; text-align: center; color: var(--muted); font-size: 17px; }
+  .sub.left { text-align: left; margin-left: 0; }
+
+  .steps { list-style: none; padding: 0; margin: 48px 0 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); counter-reset: s; }
+  .steps li { position: relative; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+  .num { font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+  .steps h3 { font-size: 18px; margin: 8px 0 6px; }
+  .steps p, .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .grid { display: grid; gap: 16px; margin-top: 48px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .grid.four { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+  .card h3 { font-size: 18px; margin-bottom: 8px; }
+  .card.link { text-decoration: none; transition: border-color .15s, transform .15s; }
+  .card.link:hover { border-color: var(--accent); transform: translateY(-2px); }
+  @media (prefers-reduced-motion: reduce) { .card.link:hover { transform: none; } html { scroll-behavior: auto; } }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin: 36px 0 20px; }
+  .tabs button { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; min-height: 40px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .panel img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; }
+  .more { text-align: center; margin: 24px 0 0; } .more a { color: var(--accent); font-weight: 600; text-decoration: none; }
+
+  .split { display: grid; gap: 40px; align-items: center; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .split { grid-template-columns: 1fr 1.1fr; } .split h2 { text-align: left; } }
+  .ticks { padding: 0; margin: 20px 0 24px; list-style: none; display: grid; gap: 8px; }
+  .ticks li::before { content: "✓"; color: var(--accent); font-weight: 800; margin-right: 10px; }
+  .term { position: relative; background: var(--term); color: var(--term-fg); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; min-width: 0; }
+  .term-bar { display: flex; gap: 6px; padding: 12px 14px; border-bottom: 1px solid rgb(255 255 255 / .08); }
+  .term-bar span { width: 10px; height: 10px; border-radius: 50%; background: rgb(255 255 255 / .18); }
+  .term pre { margin: 0; padding: 20px; overflow-x: auto; font: 13.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+  .prompt { color: #818cf8; user-select: none; margin-right: 8px; }
+  .copy { position: absolute; top: 6px; right: 8px; font: 600 12px inherit; font-family: inherit; color: var(--term-fg); background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .14); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+  .final { padding: 88px 0; background: linear-gradient(135deg, #312e81, #4f46e5 55%, #6366f1); color: #fff; text-align: center; }
+  .final h2 { color: #fff; max-width: 760px; margin: 0 auto; }
+  .final .btn.primary { background: #fff; color: #312e81; }
+  .final .btn.ghost { background: transparent; color: #fff; border-color: rgb(255 255 255 / .5); }
+
+  .foot { border-top: 1px solid var(--line); padding: 28px 0; font-size: 14px; color: var(--muted); }
+  .foot-in { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .foot nav { display: flex; gap: 16px; flex-wrap: wrap; }
+  .foot a { text-decoration: none; } .foot a:hover { color: var(--fg); }
+</style>
