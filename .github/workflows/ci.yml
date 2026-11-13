@@ -88,19 +88,40 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh $(ls deploy/*.sh 2>/dev/null)
+          shellcheck -x deploy/scripts/*.sh deploy/docker/*.sh deploy/postgres/*.sh deploy/release/*.sh deploy/test/*.sh deploy/get.sh
+      - name: Configuration reference in docs matches env.template
+        run: python3 deploy/release/gen-env-docs.py --check
       - name: Every script supports --help
         run: for s in deploy/scripts/*.sh; do [ "$s" = deploy/scripts/lib.sh ] || bash "$s" --help >/dev/null; done
       - name: Validate compose (release and source modes)
         run: |
           docker compose -f deploy/compose.yaml --env-file deploy/env.template config -q
           docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template config -q
+          VIGIL_DOMAIN=vigil.example.com docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml --env-file deploy/env.template config --format json > tls.json
+          python3 -c 'import json; c=json.load(open("tls.json"))["services"]; assert not c["web"].get("ports"), "web must not be published with TLS"; assert {p["published"] for p in c["proxy"]["ports"]} == {"80","443"}'
       - name: No unpinned images
         run: |
-          imgs=$(docker compose -f deploy/compose.yaml --env-file deploy/env.template config --images)
+          imgs=$(VIGIL_DOMAIN=vigil.example.com docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml --env-file deploy/env.template config --images)
           echo "$imgs"
           ! echo "$imgs" | grep -Eq ':latest$|^[^:]+$' || { echo "::error::unpinned image in compose.yaml"; exit 1; }
           awk 'toupper($1)=="FROM"{img=$2; if (toupper($3)=="AS") stage[$4]=1; if (!(img in stage) && (img !~ /:/ || img ~ /:latest$/)) {print FILENAME": unpinned base image "img; bad=1}} END{exit bad}' deploy/docker/*.Dockerfile
+
+  terraform:
+    name: cloud examples (terraform fmt + validate, cloud-init)
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        cloud: [aws, gcp, azure]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: terraform fmt / init / validate
+        run: |
+          docker run --rm -v "$PWD/deploy/cloud:/w" -w /w/${{ matrix.cloud }} -e TF_DATA_DIR=/tmp/tf --entrypoint sh \
+            hashicorp/terraform:1.16.7 -c 'terraform fmt -check -diff && terraform init -backend=false -input=false >/dev/null && terraform validate'
+      - name: cloud-init.yaml parses and its script passes shellcheck
+        run: |
+          python3 -c 'import yaml,sys; d=yaml.safe_load(open(sys.argv[1])); open("/tmp/ci.sh","w").write(d["write_files"][0]["content"])' deploy/cloud/${{ matrix.cloud }}/cloud-init.yaml
+          shellcheck /tmp/ci.sh
 
   secrets:
     name: secret scan (gitleaks)
@@ -133,3 +154,17 @@ jobs:
             fi
           done
           exit $bad
+
+  installer-smoke:
+    name: get.sh installer smoke test
+    needs: [deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build images from this commit
+        run: docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml --env-file deploy/env.template build
+      - name: Install with get.sh from a local registry + asset server; assert readyz, login, rerun, backup, upgrade
+        run: sudo bash deploy/test/smoke-get.sh
+      - name: Same with built-in HTTPS (--domain vigil.test --tls-mode internal)
+        run: sudo bash deploy/test/smoke-get.sh --tls

@@ -37,6 +37,7 @@ printf '%s\n' "$INSTALL_MODE" > "$backup/previous-mode"
 if [ -n "${VIGIL_PREVIOUS_COMPOSE:-}" ] && [ -f "$VIGIL_PREVIOUS_COMPOSE" ]; then cp "$VIGIL_PREVIOUS_COMPOSE" "$backup/compose.yaml"
 else cp "$DEPLOY_DIR/compose.yaml" "$backup/compose.yaml"; fi
 
+env_merge_template
 env_set VIGIL_VERSION "$to"
 if ! fetch_images "$to"; then
   env_set VIGIL_VERSION "$from"

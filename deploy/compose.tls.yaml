@@ -1,0 +1,43 @@
+# TLS override, added automatically by deploy/scripts/* when VIGIL_DOMAIN is set and VIGIL_TLS_MODE is not "off".
+# A pinned Caddy reverse proxy publishes 80/443 and terminates TLS; the web UI is no longer published at all and is
+# reachable only on the private backend network.
+services:
+  web:
+    ports: !reset []
+
+  proxy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    environment:
+      VIGIL_DOMAIN: ${VIGIL_DOMAIN:?VIGIL_DOMAIN must be set for TLS}
+      VIGIL_TLS_MODE: ${VIGIL_TLS_MODE:-acme}
+      VIGIL_ACME_EMAIL: ${VIGIL_ACME_EMAIL:-}
+    command: ["/bin/sh", "/etc/vigil-proxy/start.sh"]
+    ports:
+      - "${VIGIL_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${VIGIL_HTTPS_BIND:-0.0.0.0}:443:443"
+      - "${VIGIL_HTTPS_BIND:-0.0.0.0}:443:443/udp"
+    volumes:
+      - ./proxy/start.sh:/etc/vigil-proxy/start.sh:ro
+      - caddydata:/data
+      - caddyconfig:/config
+      - type: bind
+        source: ${VIGIL_TLS_CERT_FILE:-./empty-credentials.json}
+        target: /certs/cert.pem
+        read_only: true
+      - type: bind
+        source: ${VIGIL_TLS_KEY_FILE:-./empty-credentials.json}
+        target: /certs/key.pem
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      web: { condition: service_healthy }
+    networks: [backend]
+
+volumes:
+  caddydata:
+  caddyconfig:

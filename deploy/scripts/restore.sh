@@ -35,6 +35,16 @@ info "stopping application services"
 dc stop web api worker agents >/dev/null 2>&1 || true
 dc up -d --wait postgres objectstore
 
+# The data volume may have been initialised with other passwords (restore onto a new VM): align the database roles
+# with the .env now in place. Values go through stdin, never the process list; they are hex so need no quoting.
+info "syncing database role passwords with .env"
+for k in POSTGRES_PASSWORD VIGIL_OWNER_DB_PASSWORD VIGIL_APP_DB_PASSWORD; do
+  [[ "$(env_get "$k")" =~ ^[A-Za-z0-9]+$ ]] || die "$k in .env must be alphanumeric"
+done
+printf "ALTER ROLE postgres PASSWORD '%s';\nALTER ROLE vigil_owner PASSWORD '%s';\nALTER ROLE vigil_app PASSWORD '%s';\n" \
+  "$(env_get POSTGRES_PASSWORD)" "$(env_get VIGIL_OWNER_DB_PASSWORD)" "$(env_get VIGIL_APP_DB_PASSWORD)" \
+  | dc exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -q -d postgres >/dev/null
+
 info "restoring database"
 dc exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS vigil WITH (FORCE)" -c "CREATE DATABASE vigil OWNER vigil_owner"
 dc exec -T postgres pg_restore -U postgres -d vigil --exit-on-error < "$dir/db.dump"

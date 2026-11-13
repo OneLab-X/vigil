@@ -17,6 +17,8 @@ const ARM = "https://management.azure.com";
 const GRAPH = "https://graph.microsoft.com";
 const LA = "https://api.loganalytics.io";
 const RESOURCE = { arm: ARM, graph: GRAPH, la: LA } as const;
+/** Azure Instance Metadata Service token endpoint (link-local, fixed; never configurable). */
+const IMDS_TOKEN = "http://169.254.169.254/metadata/identity/oauth2/token";
 type Resource = keyof typeof RESOURCE;
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -24,13 +26,15 @@ const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a
 export interface AzureConnectionConfig {
   tenantId: string;
   subscriptionId: string;
-  /** app (client) id for workload_identity / client_secret */
+  /** app (client) id for workload_identity / client_secret; user-assigned identity client id for managed_identity */
   clientId?: string;
   /**
    * workload_identity: federated token from AZURE_FEDERATED_TOKEN_FILE in the Vigil runtime (keyless, production).
+   * managed_identity: token from the Azure VM's Instance Metadata Service (keyless; Vigil runs on an Azure VM with a
+   *   system- or user-assigned managed identity; clientId selects a user-assigned identity).
    * client_secret: app secret stored in SecretStore. azure_cli: LOCAL DEV ONLY (`az login`), refused in production.
    */
-  authMode: "workload_identity" | "client_secret" | "azure_cli";
+  authMode: "workload_identity" | "managed_identity" | "client_secret" | "azure_cli";
   /** where Entra ID sign-in/audit logs are read from */
   entraSource: "graph" | "log_analytics" | "none";
   workspaceId?: string;
@@ -91,7 +95,8 @@ export class AzureConnector implements CloudConnector {
   ) {
     if (!GUID.test(cfg.tenantId)) throw new Error("invalid Azure tenant id");
     if (!GUID.test(cfg.subscriptionId)) throw new Error("invalid Azure subscription id");
-    if (cfg.authMode !== "azure_cli" && !(cfg.clientId && GUID.test(cfg.clientId))) throw new Error("clientId required for this auth mode");
+    if (cfg.clientId !== undefined && !GUID.test(cfg.clientId)) throw new Error("invalid clientId");
+    if ((cfg.authMode === "workload_identity" || cfg.authMode === "client_secret") && !cfg.clientId) throw new Error("clientId required for this auth mode");
     if (cfg.entraSource === "log_analytics" && !(cfg.workspaceId && GUID.test(cfg.workspaceId))) throw new Error("workspaceId required for entraSource=log_analytics");
     this.fetchImpl = rt.fetch ?? fetch;
   }
@@ -113,6 +118,18 @@ export class AzureConnector implements CloudConnector {
       const j = JSON.parse(stdout);
       value = j.accessToken;
       expiresInS = j.expires_on ? Number(j.expires_on) - Date.now() / 1000 : 1800;
+    } else if (this.cfg.authMode === "managed_identity") {
+      // Keyless: the VM's managed identity. IMDS only answers on the host's link-local address and requires the
+      // Metadata header, so tokens cannot be obtained from outside the VM.
+      const q = new URLSearchParams({ "api-version": "2018-02-01", resource: RESOURCE[res] });
+      if (this.cfg.clientId) q.set("client_id", this.cfg.clientId);
+      const r = await withRetry(async () => {
+        const resp = await this.fetchImpl(`${IMDS_TOKEN}?${q}`, { headers: { Metadata: "true" }, signal: AbortSignal.timeout(10_000) });
+        if (!resp.ok) throw httpError(resp.status, await resp.text(), resp.headers.get("retry-after"));
+        return (await resp.json()) as { access_token: string; expires_in?: string | number; expires_on?: string | number };
+      }).catch((e) => { throw new Error(`managed identity token unavailable (is Vigil running on an Azure VM with a managed identity?): ${(e as Error).message}`); });
+      value = r.access_token;
+      expiresInS = Number(r.expires_in) || (r.expires_on ? Number(r.expires_on) - Date.now() / 1000 : 3600);
     } else {
       const form = new URLSearchParams({ client_id: this.cfg.clientId!, scope: `${RESOURCE[res]}/.default`, grant_type: "client_credentials" });
       if (this.cfg.authMode === "client_secret") {
@@ -327,11 +344,11 @@ const guid = (title: string, description?: string) => z.string().regex(GUID, "mu
 const AzureConfigSchema = z.object({
   tenantId: guid("Directory (tenant) ID"),
   subscriptionId: guid("Subscription ID"),
-  authMode: z.enum(["workload_identity", "client_secret", "azure_cli"]).default("workload_identity").meta({
-    title: "Authentication", description: "Workload identity federation in production; client secret if federation is not possible",
-    ui: { kind: "select", labels: { workload_identity: "Workload identity federation (keyless)", client_secret: "App registration + client secret", azure_cli: "Azure CLI token (local dev only)" } },
+  authMode: z.enum(["workload_identity", "managed_identity", "client_secret", "azure_cli"]).default("workload_identity").meta({
+    title: "Authentication", description: "Managed identity when Vigil runs on an Azure VM, workload identity federation elsewhere; client secret only if neither is possible",
+    ui: { kind: "select", labels: { workload_identity: "Workload identity federation (keyless)", managed_identity: "Managed identity of this Azure VM (keyless)", client_secret: "App registration + client secret", azure_cli: "Azure CLI token (local dev only)" } },
   }),
-  clientId: guid("Application (client) ID", "App registration used by Vigil").optional().meta({ title: "Application (client) ID", ui: { showWhen: { authMode: ["workload_identity", "client_secret"] } } }),
+  clientId: guid("Application (client) ID", "App registration used by Vigil, or the user-assigned managed identity's client ID").optional().meta({ title: "Application (client) ID", ui: { showWhen: { authMode: ["workload_identity", "managed_identity", "client_secret"] } } }),
   entraSource: z.enum(["graph", "log_analytics", "none"]).default("graph").meta({
     title: "Entra ID logs via", ui: { kind: "select", labels: { graph: "Microsoft Graph (AuditLog.Read.All)", log_analytics: "Log Analytics workspace", none: "Don't read Entra ID logs" } },
   }),
@@ -351,6 +368,7 @@ export const azureConnectorDefinition: ConnectorDefinition<AzureConfig, AzureCre
   credentialSchema: AzureCredentialSchema,
   authModes: [
     { id: "workload_identity", label: "Workload identity federation", description: "Federated credential on the app registration; token from AZURE_FEDERATED_TOKEN_FILE (keyless)" },
+    { id: "managed_identity", label: "Managed identity", description: "System- or user-assigned managed identity of the Azure VM running Vigil (IMDS, keyless)" },
     { id: "client_secret", label: "Client secret", description: "App registration secret stored encrypted in the SecretStore" },
     { id: "azure_cli", label: "Azure CLI token", description: "Developer's `az login`", devOnly: true },
   ],
@@ -358,7 +376,7 @@ export const azureConnectorDefinition: ConnectorDefinition<AzureConfig, AzureCre
   accountRefOf: (c) => c.subscriptionId.toLowerCase(),
   validate(c, creds, rt) {
     if (c.authMode === "azure_cli" && rt.production) return "azure_cli auth is for local development only";
-    if (c.authMode !== "azure_cli" && !c.clientId) return "clientId required for workload_identity / client_secret";
+    if ((c.authMode === "workload_identity" || c.authMode === "client_secret") && !c.clientId) return "clientId required for workload_identity / client_secret";
     if (c.authMode === "client_secret" && !creds?.clientSecret) return "clientSecret required for authMode=client_secret";
     if (c.authMode !== "client_secret" && creds?.clientSecret) return "clientSecret is only used with authMode=client_secret";
     if (c.entraSource === "log_analytics" && !c.workspaceId) return "workspaceId required for entraSource=log_analytics";
@@ -369,7 +387,8 @@ export const azureConnectorDefinition: ConnectorDefinition<AzureConfig, AzureCre
   knownSources: (c) => azureKnownSources(c),
   normalizers: { "*": (raw, ctx) => normalizeAzure(raw, ctx.sourceType, ctx.config) },
   onboardingInstructions: (c, _s, rt) => {
-    const app = c.clientId ?? "<APP_ID>";
+    const mi = c.authMode === "managed_identity";
+    const app = c.clientId ?? (mi ? "<MANAGED_IDENTITY_PRINCIPAL_ID>" : "<APP_ID>");
     const scope = `/subscriptions/${c.subscriptionId}`;
     return {
       roles: [
@@ -378,9 +397,12 @@ export const azureConnectorDefinition: ConnectorDefinition<AzureConfig, AzureCre
         ...(c.entraSource === "log_analytics" ? ["Log Analytics Reader on the workspace receiving Entra ID SigninLogs / AuditLogs"] : []),
       ],
       commands: [
-        ...(c.authMode === "azure_cli" ? ["# local dev: az login --tenant " + c.tenantId] : [`az ad app create --display-name vigil-reader   # note the appId → clientId`, `az ad sp create --id ${app}`]),
+        ...(c.authMode === "azure_cli" ? ["# local dev: az login --tenant " + c.tenantId]
+          : mi ? ["# the VM's managed identity (deploy/cloud/azure Terraform creates a user-assigned one): az identity show -g <RG> -n vigil --query '{clientId:clientId,principalId:principalId}'"]
+          : [`az ad app create --display-name vigil-reader   # note the appId → clientId`, `az ad sp create --id ${app}`]),
         `az role assignment create --assignee ${app} --role "Monitoring Reader" --scope ${scope}`,
-        ...(c.entraSource === "graph" ? [`az ad app permission add --id ${app} --api 00000003-0000-0000-c000-000000000000 --api-permissions b0afded3-3588-46d8-8b3d-9842eff778da=Role   # AuditLog.Read.All`, `az ad app permission admin-consent --id ${app}`] : []),
+        ...(c.entraSource === "graph" && mi ? [`# Graph app role for a managed identity: POST https://graph.microsoft.com/v1.0/servicePrincipals/<MI_PRINCIPAL_ID>/appRoleAssignments {"principalId":"<MI_PRINCIPAL_ID>","resourceId":"<GRAPH_SP_OBJECT_ID>","appRoleId":"b0afded3-3588-46d8-8b3d-9842eff778da"}   # AuditLog.Read.All`] : []),
+        ...(c.entraSource === "graph" && !mi ? [`az ad app permission add --id ${app} --api 00000003-0000-0000-c000-000000000000 --api-permissions b0afded3-3588-46d8-8b3d-9842eff778da=Role   # AuditLog.Read.All`, `az ad app permission admin-consent --id ${app}`] : []),
         ...(c.entraSource === "log_analytics" ? [`az role assignment create --assignee ${app} --role "Log Analytics Reader" --scope <WORKSPACE_RESOURCE_ID>`] : []),
         ...(c.authMode === "workload_identity" ? [`az ad app federated-credential create --id ${app} --parameters '{"name":"vigil","issuer":"<VIGIL_RUNTIME_OIDC_ISSUER>","subject":"<VIGIL_RUNTIME_SUBJECT>","audiences":["api://AzureADTokenExchange"]}'`] : []),
       ],

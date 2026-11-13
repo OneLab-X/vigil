@@ -37,14 +37,14 @@ grep -q "^VIGIL_VERSION=$VERSION$" "$b/env.template" || { echo "env.template ren
 
 cp "$DEPLOY_DIR"/scripts/*.sh "$b/scripts/"
 cp "$DEPLOY_DIR"/postgres/* "$b/postgres/"
-cp "$DEPLOY_DIR/empty-credentials.json" "$b/"
-[ -d "$DEPLOY_DIR/proxy" ] && cp -R "$DEPLOY_DIR/proxy" "$b/"
+cp "$DEPLOY_DIR/empty-credentials.json" "$DEPLOY_DIR/compose.tls.yaml" "$b/"
+cp -R "$DEPLOY_DIR/proxy" "$b/"
 printf '%s\n' "$VERSION" > "$b/VERSION"
-chmod 755 "$b"/scripts/*.sh "$b"/postgres/*.sh
+chmod 755 "$b"/scripts/*.sh "$b"/postgres/*.sh "$b"/proxy/*.sh
 
 # Reproducible-ish tarball: fixed owner and sorted entries.
 tar_opts=(--owner=0 --group=0 --numeric-owner)
-tar --version 2>/dev/null | grep -q GNU || tar_opts=(--uid 0 --gid 0)
+case "$(tar --version 2>/dev/null || true)" in *GNU*) ;; *) tar_opts=(--uid 0 --gid 0);; esac  # no pipe: grep -q + pipefail can SIGPIPE
 (cd "$stage" && find "vigil-deploy-$VERSION" -print | LC_ALL=C sort | tar "${tar_opts[@]}" --no-recursion -czf "$OUT/vigil-deploy-$VERSION.tar.gz" -T -)
 cp "$b/compose.yaml" "$b/env.template" "$OUT/"
 if [ -f "$DEPLOY_DIR/get.sh" ]; then install -m 755 "$DEPLOY_DIR/get.sh" "$OUT/get.sh"; fi
