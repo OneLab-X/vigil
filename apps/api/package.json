@@ -1,0 +1,29 @@
+{
+  "name": "@vigil/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "start": "tsx src/server.ts",
+    "worker": "tsx src/worker-main.ts",
+    "admin": "tsx src/admin-cli.ts",
+    "seed": "tsx --env-file-if-exists=../../.env src/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.913.0",
+    "@hono/node-server": "1.19.5",
+    "@hono/zod-openapi": "1.1.4",
+    "@vigil/core": "workspace:*",
+    "@vigil/db": "workspace:*",
+    "drizzle-orm": "0.44.7",
+    "hono": "4.10.4",
+    "postgres": "3.4.7",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "vitest": "3.2.4"
+  }
+}

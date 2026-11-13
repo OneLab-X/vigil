@@ -1,0 +1,10 @@
+# Default owners for everything in the repo.
+*                         @OneLab-X/vigil-maintainers
+
+# Security-critical areas: require maintainer review.
+/apps/api/src/lib/        @OneLab-X/vigil-maintainers
+/apps/api/src/services/broker.ts @OneLab-X/vigil-maintainers
+/packages/db/             @OneLab-X/vigil-maintainers
+/deploy/                  @OneLab-X/vigil-maintainers
+/.github/                 @OneLab-X/vigil-maintainers
+SECURITY.md               @OneLab-X/vigil-maintainers

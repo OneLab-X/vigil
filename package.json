@@ -1,0 +1,24 @@
+{
+  "name": "vigil",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "db:start": "bash scripts/db.sh start",
+    "db:stop": "bash scripts/db.sh stop",
+    "db:migrate": "pnpm --filter @vigil/db migrate",
+    "db:seed": "pnpm --filter @vigil/api seed",
+    "dev": "pnpm db:start && concurrently --kill-others --names api,agents,web --prefix-colors blue,magenta,green \"pnpm dev:api\" \"pnpm dev:agents\" \"pnpm dev:web\"",
+    "dev:api": "pnpm --filter @vigil/api dev",
+    "dev:web": "pnpm --filter @vigil/web dev",
+    "dev:agents": "cd services/agents && uv run $([ -f ../../.env ] && echo --env-file ../../.env) uvicorn vigil_agents.app:app --host 127.0.0.1 --port 8090",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "concurrently": "9.2.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

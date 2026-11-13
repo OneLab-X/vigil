@@ -1,0 +1,9 @@
+Vigil
+Copyright 2026 The Vigil Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+"The Vigil Authors" means the individuals and organizations listed in the git
+history of https://github.com/OneLab-X/vigil. Third-party components retain their
+own licenses; see each package's manifest (package.json, pyproject.toml) and the
+SBOM attached to every release.

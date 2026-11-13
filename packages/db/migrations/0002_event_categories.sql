@@ -1,0 +1,2 @@
+ALTER TABLE "security_events" ADD COLUMN "categories" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+CREATE INDEX "security_events_categories_gin" ON "security_events" USING gin ("categories");

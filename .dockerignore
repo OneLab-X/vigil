@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+.local
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/backups
+.git
+*.tsbuildinfo

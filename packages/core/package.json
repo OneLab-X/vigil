@@ -1,0 +1,25 @@
+{
+  "name": "@vigil/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudtrail": "3.913.0",
+    "@aws-sdk/client-cloudwatch-logs": "3.913.0",
+    "@aws-sdk/client-sts": "3.913.0",
+    "google-auth-library": "10.4.0",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

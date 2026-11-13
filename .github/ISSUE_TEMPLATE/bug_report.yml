@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in Vigil behaves incorrectly. For security problems use SECURITY.md instead.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security vulnerability?** Do not file it here — report it privately: https://github.com/OneLab-X/vigil/security/advisories/new
+        Remove credentials, account/project ids, IPs and log contents from everything you paste.
+  - type: input
+    id: version
+    attributes: { label: Vigil version, description: "`cat /opt/vigil/VERSION`, image tag, or git commit", placeholder: 0.1.0 }
+    validations: { required: true }
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options: [Docker Compose release install, Docker Compose from source, Local development, Other]
+    validations: { required: true }
+  - type: input
+    id: host
+    attributes: { label: Host / cloud, placeholder: "Ubuntu 24.04 on AWS EC2 t3.xlarge" }
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: Include the steps to reproduce. }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: What you expected }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostics / logs (redacted)
+      description: Output of `deploy/scripts/diagnostics.sh` (it redacts secrets) or relevant `docker compose logs`.
+      render: text

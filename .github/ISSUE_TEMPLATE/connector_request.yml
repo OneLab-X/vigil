@@ -1,0 +1,30 @@
+name: Connector request
+description: Ask for a new log/security data source (cloud, SIEM, log platform, identity provider).
+labels: [connector, triage]
+body:
+  - type: input
+    id: source
+    attributes: { label: Source, placeholder: "e.g. Okta System Log, Cloudflare audit logs, Splunk" }
+    validations: { required: true }
+  - type: textarea
+    id: data
+    attributes:
+      label: Data to ingest
+      description: Which log types / APIs, rough daily volume, and which detections or investigations they enable.
+    validations: { required: true }
+  - type: textarea
+    id: auth
+    attributes:
+      label: Read-only authentication
+      description: |
+        How can Vigil read this data with least privilege? Prefer keyless/short-lived options
+        (workload identity federation, role assumption, OAuth client credentials with read scopes).
+    validations: { required: true }
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I can provide redacted sample events for fixtures
+        - label: I can live-test the connector against a real (non-production) account
+        - label: I want to implement it myself (see CONTRIBUTING.md)

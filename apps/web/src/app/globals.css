@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+}
+
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f1f3f6; --border: #e3e6eb;
+  --fg: #0f172a; --muted: #5b6474; --accent: #4f46e5; --accent-fg: #ffffff;
+  /* categorical chart slots (validated: dataviz validate_palette, light vs #ffffff) */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+}
+.dark {
+  --bg: #0b0e14; --panel: #11151d; --panel-2: #171c26; --border: #232a36;
+  --fg: #e6e9ef; --muted: #8b95a7; --accent: #818cf8; --accent-fg: #0b0e14;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font-feature-settings: "cv11", "ss01"; }
+.mono { font-family: var(--font-mono); }

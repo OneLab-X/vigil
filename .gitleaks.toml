@@ -1,0 +1,17 @@
+# gitleaks config: default rules + a narrow allowlist for intentional test fixtures.
+# Prefer building fake key-shaped fixtures at runtime ("NRAK-" + "…") so neither gitleaks nor GitHub push
+# protection sees a literal key. Every entry below is a fake value used to prove redaction/secret-handling works, or a public constant.
+# Do not add real-looking values here; rotate and remove any real secret instead.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional fake credentials in tests and public Azure built-in role ids"
+regexes = [
+  '''AKIAABCDEFGHIJKLMNOP''',                                    # fake AWS access key id (redaction tests)
+  '''dd0123456789abcdef0123456789abcd''',                        # fake Datadog key
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.[A-Za-z0-9_-]+''',  # unsigned test JWT (redaction tests)
+]
+paths = [
+  '''packages/core/src/normalize/azure\.ts''',                  # AZURE_BUILTIN_ROLES: public, tenant-independent GUIDs
+]

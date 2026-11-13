@@ -1,0 +1,149 @@
+# Vigil — self-hosted single-organization install.
+# Only the web UI is published. API, worker, agents, Postgres and the object store are reachable only on the
+# private "backend" network, so /internal/v1 (agent tool broker) is never exposed.
+name: ${COMPOSE_PROJECT_NAME:-vigil}
+
+x-api-env: &api-env
+  NODE_ENV: production
+  VIGIL_VERSION: ${VIGIL_VERSION}
+  VIGIL_DATABASE_URL: postgres://vigil_app:${VIGIL_APP_DB_PASSWORD}@postgres:5432/vigil
+  VIGIL_OWNER_DATABASE_URL: postgres://vigil_owner:${VIGIL_OWNER_DB_PASSWORD}@postgres:5432/vigil
+  VIGIL_SECRET_KEY: ${VIGIL_SECRET_KEY}
+  VIGIL_INTERNAL_TOKEN: ${VIGIL_INTERNAL_TOKEN}
+  VIGIL_AGENTS_URL: http://agents:8090
+  VIGIL_BROKER_URL: http://api:8080
+  VIGIL_WEB_ORIGIN: ${VIGIL_WEB_ORIGIN}
+  VIGIL_DEFAULT_MODEL_PROVIDER: ${VIGIL_DEFAULT_MODEL_PROVIDER}
+  VIGIL_DEFAULT_MODEL: ${VIGIL_DEFAULT_MODEL}
+  VIGIL_MAX_PAGES_PER_JOB: ${VIGIL_MAX_PAGES_PER_JOB}
+  VIGIL_INGEST_LAG_MINUTES: ${VIGIL_INGEST_LAG_MINUTES}
+  VIGIL_AWS_PRINCIPAL_ARN: ${VIGIL_AWS_PRINCIPAL_ARN:-}
+  # Azure workload identity federation: set only when a federated token file is mounted (see x-azure-token)
+  AZURE_FEDERATED_TOKEN_FILE: ${VIGIL_AZURE_FEDERATED_TOKEN_FILE:+/secrets/azure-federated-token}
+  VIGIL_BLOB_STORE: s3
+  VIGIL_S3_BUCKET: ${VIGIL_S3_BUCKET}
+  VIGIL_S3_ENDPOINT: ${VIGIL_S3_ENDPOINT}
+  VIGIL_S3_REGION: ${VIGIL_S3_REGION}
+  AWS_ACCESS_KEY_ID: ${VIGIL_S3_ACCESS_KEY}
+  AWS_SECRET_ACCESS_KEY: ${VIGIL_S3_SECRET_KEY}
+
+x-gcp-creds: &gcp-creds
+  type: bind
+  source: ${VIGIL_GCP_CREDENTIALS_FILE:-./empty-credentials.json}
+  target: /secrets/gcp-credentials.json
+  read_only: true
+
+# Short-lived OIDC token projected by the host platform for Azure workload identity federation (not a secret key).
+x-azure-token: &azure-token
+  type: bind
+  source: ${VIGIL_AZURE_FEDERATED_TOKEN_FILE:-./empty-credentials.json}
+  target: /secrets/azure-federated-token
+  read_only: true
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      VIGIL_OWNER_DB_PASSWORD: ${VIGIL_OWNER_DB_PASSWORD}
+      VIGIL_APP_DB_PASSWORD: ${VIGIL_APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/10-vigil-roles.sh:/docker-entrypoint-initdb.d/10-vigil-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vigil"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  # Bundled S3-compatible evidence store (SeaweedFS). Replace with external S3 via VIGIL_S3_ENDPOINT.
+  objectstore:
+    image: chrislusf/seaweedfs:4.51
+    restart: unless-stopped
+    environment:
+      VIGIL_S3_ACCESS_KEY: ${VIGIL_S3_ACCESS_KEY}
+      VIGIL_S3_SECRET_KEY: ${VIGIL_S3_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        umask 077
+        printf '{"identities":[{"name":"vigil","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$VIGIL_S3_ACCESS_KEY" "$$VIGIL_S3_SECRET_KEY" > /tmp/s3.json
+        exec weed server -dir=/data -master.volumeSizeLimitMB=1024 -volume.max=0 -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    volumes: [objectdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [backend]
+
+  # One-shot: apply database migrations and create the evidence bucket. Re-run safely on every upgrade.
+  migrate:
+    image: vigil/api:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/api.Dockerfile, args: { VIGIL_VERSION: "${VIGIL_VERSION}" } }
+    environment: *api-env
+    command: ["sh", "-c", "vigil-migrate && vigil-admin init-storage"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+    restart: "no"
+    networks: [backend]
+
+  api:
+    image: vigil/api:${VIGIL_VERSION}
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      VIGIL_RUN_WORKER: "0"
+    volumes: [*gcp-creds, *azure-token]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+
+  worker:
+    image: vigil/api:${VIGIL_VERSION}
+    restart: unless-stopped
+    environment: *api-env
+    command: ["node", "--import", "tsx", "src/worker-main.ts"]
+    volumes: [*gcp-creds, *azure-token]
+    healthcheck:
+      test: ["CMD", "node", "-e", "const t=+require('fs').readFileSync('/tmp/vigil-worker-heartbeat','utf8');process.exit(Date.now()-t<300000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+
+  agents:
+    image: vigil/agents:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/agents.Dockerfile }
+    restart: unless-stopped
+    # Model credentials live only here. No database or cloud credentials are given to this service.
+    environment:
+      VIGIL_INTERNAL_TOKEN: ${VIGIL_INTERNAL_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VIGIL_GEMINI_THINKING_LEVEL: ${VIGIL_GEMINI_THINKING_LEVEL:-}
+    networks: [backend]
+    extra_hosts: ["host.docker.internal:host-gateway"] # lets a customer-hosted model on this host (e.g. Ollama) be reached
+
+  web:
+    image: vigil/web:${VIGIL_VERSION}
+    build: { context: .., dockerfile: deploy/docker/web.Dockerfile, args: { VIGIL_API_URL: "http://api:8080" } }
+    restart: unless-stopped
+    ports: ["${VIGIL_WEB_BIND:-127.0.0.1}:${VIGIL_WEB_PORT:-3000}:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [backend]
+
+volumes:
+  pgdata:
+  objectdata:
+
+networks:
+  backend: {}
