@@ -6,6 +6,12 @@ Release notes for each GitHub release are taken from the matching section of thi
 
 ## [Unreleased]
 
+### Added
+- Member management: owners can add people, change roles and remove members under Settings → Members
+  (`POST/PATCH/DELETE /api/v1/members`). New accounts get a one-time password shown once; existing accounts are
+  linked without changing their password. Last-owner and self-demotion guards; all changes are audited.
+- `vigil-admin add-member --email E --name N --role R [--org SLUG]` for adding members from the server.
+
 ## [0.1.0] - 2026-11-13
 
 First public release.

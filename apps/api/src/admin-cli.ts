@@ -1,6 +1,7 @@
 /**
  * vigil-admin — operator CLI for self-hosted installs (run inside the api container).
  *   create-owner --email E --name N --org O [--slug S]   first administrator + organization
+ *   add-member --email E --name N --role R [--org SLUG]  add someone to an organization (R: owner|admin|analyst|viewer)
  *   reset-password --email E                             issue a new one-time password
  *   verify-audit                                         verify every tenant's audit hash chain
  *   verify-evidence [--sample N]                         re-hash a random sample of stored raw evidence
@@ -9,11 +10,13 @@
  * One-time passwords are printed once to this terminal and must be changed at first sign-in.
  */
 import { asc, eq, sql } from "drizzle-orm";
-import { auditLogs, rawEventReferences, users, withTenant } from "@vigil/db";
+import { auditLogs, rawEventReferences, tenants, users, withTenant } from "@vigil/db";
 import { closeDb, getDb } from "./db.js";
 import { hashPassword, randomToken } from "./lib/crypto.js";
 import { verifyChain } from "./lib/audit.js";
-import { createTenant } from "./services/tenancy.js";
+import { audit } from "./lib/audit.js";
+import { createTenant, inviteMember } from "./services/tenancy.js";
+import type { Role } from "./lib/rbac.js";
 import { blobStore } from "./lib/blobstore.js";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -41,6 +44,26 @@ try {
     console.log(`created organization "${org}" (${tenantId}) and owner ${email}`);
     console.log(`one-time password: ${pw}`);
     console.log("sign in and change it immediately; it is not stored anywhere in plain text.");
+  } else if (cmd === "add-member") {
+    const email = need("email").toLowerCase(), name = need("name"), role = need("role") as Role;
+    if (!["owner", "admin", "analyst", "viewer"].includes(role)) throw new Error("--role must be owner, admin, analyst or viewer");
+    const orgs: Array<{ id: string; slug: string; name: string }> = [];
+    for (const id of await tenantIds()) {
+      const [t] = await withTenant(db, { tenantId: id }, (tx) => tx.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants).where(eq(tenants.id, id)));
+      if (t) orgs.push(t);
+    }
+    const org = args.org ? orgs.find((o) => o.slug === args.org || o.id === args.org) : orgs.length === 1 ? orgs[0] : undefined;
+    if (!org) throw new Error(args.org ? `no organization "${args.org}"` : `several organizations exist; pass --org with one of: ${orgs.map((o) => o.slug).join(", ") || "(none)"}`);
+    const r = await withTenant(db, { tenantId: org.id }, async (tx) => {
+      const res = await inviteMember(tx, org.id, { email, displayName: name, role });
+      await audit(tx, { tenantId: org.id, actorType: "system", actorId: "vigil-admin", action: "member.added", targetType: "user", targetId: res.userId, details: { email, role, newAccount: res.created } });
+      return res;
+    });
+    console.log(`added ${email} to "${org.name}" as ${role}`);
+    if (r.oneTimePassword) {
+      console.log("one-time password was generated for this user.");
+      console.log("share it privately; they must change it at first sign-in. It is not stored anywhere in plain text.");
+    } else console.log("existing account: they sign in with their current password and can switch to this organization.");
   } else if (cmd === "reset-password") {
     const email = need("email").toLowerCase();
     const pw = randomToken(18);
@@ -88,7 +111,7 @@ try {
     const r = await db.execute(sql`select (select count(*) from users)::int as users`) as unknown as Array<{ users: number }>;
     console.log(JSON.stringify({ users: r[0]?.users }));
   } else {
-    console.error("usage: vigil-admin create-owner --email E --name N --org O [--slug S] | reset-password --email E | verify-audit | verify-evidence [--sample N] | init-storage | status");
+    console.error("usage: vigil-admin create-owner --email E --name N --org O [--slug S] | add-member --email E --name N --role R [--org SLUG] | reset-password --email E | verify-audit | verify-evidence [--sample N] | init-storage | status");
     process.exitCode = 2;
   }
 } catch (e) {

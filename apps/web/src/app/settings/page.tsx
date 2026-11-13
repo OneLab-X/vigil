@@ -1,12 +1,12 @@
 "use client";
-import { api, useApi } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useMe } from "@/components/shell";
-import { Card, PageHeader, Select, Table, Tag, Td } from "@/components/ui";
+import { Card, PageHeader, Select, Tag } from "@/components/ui";
 import { AiModels } from "@/components/ai-models";
+import { Members } from "@/components/members";
 
 export default function Settings() {
   const me = useMe();
-  const members = useApi<any>(["members"], "/members");
   return (
     <>
       <PageHeader title="Settings" description="Tenant, members and platform security posture" />
@@ -29,9 +29,7 @@ export default function Settings() {
           </ul>
         </Card>
         <AiModels />
-        <Card title="Members" pad={false} className="lg:col-span-2">
-          <Table head={["Name", "Email", "Role"]}>{(members.data?.items ?? []).map((m: any) => <tr key={m.id}><Td>{m.displayName}</Td><Td className="mono text-xs">{m.email}</Td><Td><Tag>{m.role}</Tag></Td></tr>)}</Table>
-        </Card>
+        <Members />
       </div>
     </>
   );

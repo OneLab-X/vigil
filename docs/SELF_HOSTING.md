@@ -191,8 +191,34 @@ accessible; the one-time password is not stored anywhere else in plain text. Los
 cd /opt/vigil && sudo docker compose --env-file .env exec api vigil-admin reset-password --email you@example.com
 ```
 
-Next: invite colleagues (Settings → Members), configure an AI provider (Settings → AI models) — investigations stay
-deterministic-only until you do — and connect a source.
+Next: add colleagues, configure an AI provider (Settings → AI models) — investigations stay deterministic-only until
+you do — and connect a source.
+
+### Adding colleagues
+
+Owners manage people under **Settings → Members → Add member** (email, name, role). Vigil does not send email: for a
+new account the dashboard shows a one-time password **once** — pass it on privately; the person must replace it at first
+sign-in. Someone who already has a Vigil account keeps their password and gets the organization in their switcher.
+Roles can be changed and members removed from the same table; changes apply on the member's next request. Every
+change is written to the audit log (`member.added`, `member.role_changed`, `member.removed`). An organization always
+keeps at least one owner, and owners cannot demote or remove themselves.
+
+| Role | Can |
+|---|---|
+| viewer | read everything in the organization |
+| analyst | + triage incidents, run investigations, review verdicts, propose/approve knowledge |
+| admin | + detection rules, cloud connections, ingestion, agent settings, audit log, operations |
+| owner | + manage members |
+
+From the server (e.g. when no owner can sign in):
+
+```bash
+cd /opt/vigil && sudo docker compose --env-file .env exec api vigil-admin add-member --email user@example.com --name "Jane Doe" --role analyst
+```
+
+Add `--org <slug>` if the install has more than one organization.
+
+The demo users (`owner@vigil.test` …) come only from `pnpm db:seed`, which refuses to run in production.
 
 ## 8. Connect your first source
 
@@ -300,6 +326,7 @@ from the scheduler is removed by `messageId` / content-hash dedupe.
 | Status + readiness | `sudo vigil status` | `deploy/scripts/vigil.sh status` |
 | Logs | `sudo vigil logs api worker -f` | `deploy/scripts/vigil.sh logs …` |
 | Diagnostics bundle (local only, secrets masked) | `sudo vigil diagnostics` | `deploy/scripts/diagnostics.sh` |
+| Add a member (prints a one-time password for new accounts) | `… exec api vigil-admin add-member --email user@example.com --name "Jane Doe" --role analyst [--org slug]` | |
 | New one-time password for a user | `cd /opt/vigil && sudo docker compose --env-file .env exec api vigil-admin reset-password --email user@example.com` | same in `deploy/` |
 | Verify audit hash chains | `… exec api vigil-admin verify-audit` | |
 | Re-hash a sample of stored evidence | `… exec api vigil-admin verify-evidence --sample 500` | |
