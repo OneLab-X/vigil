@@ -92,9 +92,14 @@ jobs:
       - name: SBOM (syft, SPDX) + signed attestation
         env:
           REF: ${{ env.REGISTRY }}/vigil-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          # login-action no longer writes ~/.docker/config.json, so hand syft the registry token explicitly
+          SYFT_REGISTRY_AUTH_AUTHORITY: ghcr.io
+          SYFT_REGISTRY_AUTH_USERNAME: ${{ github.actor }}
+          SYFT_REGISTRY_AUTH_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p sbom
-          docker run --rm -v "$PWD/sbom:/out" -v "$HOME/.docker:/root/.docker:ro" "$SYFT_IMAGE" \
+          docker run --rm -v "$PWD/sbom:/out" \
+            -e SYFT_REGISTRY_AUTH_AUTHORITY -e SYFT_REGISTRY_AUTH_USERNAME -e SYFT_REGISTRY_AUTH_PASSWORD "$SYFT_IMAGE" \
             "registry:$REF" -o "spdx-json=/out/vigil-${{ matrix.image }}-${VERSION}.spdx.json"
           cosign attest --yes --type spdxjson --predicate "sbom/vigil-${{ matrix.image }}-${VERSION}.spdx.json" "$REF"
       - name: Verify signature as an installer would

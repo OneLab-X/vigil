@@ -62,13 +62,16 @@ ask() { # ask VAR "Prompt" — reads from the terminal even when this script is 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 fetch() { curl -fsSL --proto '=https,http' --retry 3 --retry-delay 2 --connect-timeout 15 -o "$2" "$1"; }
 
+# os_release_field KEY: value of KEY in /etc/os-release, unquoted (empty if absent).
+os_release_field() {
+  sed -n "s/^$1=//p" /etc/os-release | head -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
+
 detect_os() {
   [ -r /etc/os-release ] || die "cannot detect the operating system (/etc/os-release missing)"
-  # Read os-release in a subshell: sourcing it here would overwrite VERSION (the --version flag) with the OS version.
-  local fields
-  # shellcheck disable=SC1091
-  fields="$(. /etc/os-release && printf '%s\n%s\n%s\n%s' "${ID:-}" "${VERSION_ID:-}" "${VERSION_CODENAME:-}" "${PRETTY_NAME:-}")"
-  { IFS= read -r OS_ID; IFS= read -r OS_VER; IFS= read -r OS_CODENAME; IFS= read -r OS_NAME; } <<<"$fields" || true
+  # Parse os-release instead of sourcing it: it defines its own VERSION, which would clobber the --version flag.
+  OS_ID="$(os_release_field ID)"; OS_VER="$(os_release_field VERSION_ID)"
+  OS_CODENAME="$(os_release_field VERSION_CODENAME)"; OS_NAME="$(os_release_field PRETTY_NAME)"
   case "$OS_ID:$OS_VER" in
     ubuntu:22.04|ubuntu:24.04) PKG=apt ;;
     debian:12*) PKG=apt ;;
