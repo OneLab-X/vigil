@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 
 const api = process.env.VIGIL_API_URL ?? "http://127.0.0.1:8080";
 const config: NextConfig = {
+  // Separate build dir for a second local instance (e.g. a demo stack next to `pnpm dev`); default .next
+  ...(process.env.VIGIL_NEXT_DIST_DIR ? { distDir: process.env.VIGIL_NEXT_DIST_DIR } : {}),
   // Container builds produce a self-contained server (deploy/docker/web.Dockerfile).
   ...(process.env.VIGIL_STANDALONE === "1" ? { output: "standalone" as const, outputFileTracingRoot: path.resolve(process.cwd(), "../..") } : {}),
   // Same-origin proxy so the httpOnly session cookie and CSRF header work without CORS.

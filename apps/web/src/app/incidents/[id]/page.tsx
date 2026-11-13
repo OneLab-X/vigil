@@ -180,7 +180,7 @@ export default function IncidentWorkspace() {
                   <div className="flex items-center justify-between gap-2"><span className="font-medium">{f.rule.name}</span><Severity value={f.severity} /></div>
                   <div className="mt-0.5 text-xs text-muted"><span className="mono">{f.rule.ruleId} v{f.rule.version}</span> · {f.eventCount} events · rule confidence {pct(f.confidence)}</div>
                   <div className="mt-1 flex flex-wrap gap-1">{(f.rule.mitre ?? []).map((m: any) => <Tag key={m.technique}>{m.technique}{m.name ? ` ${m.name}` : ""}</Tag>)}</div>
-                  <div className="mono mt-1 text-[11px] text-muted">{JSON.stringify(f.details)}</div>
+                  <div className="mono mt-1 break-all text-[11px] text-muted">{JSON.stringify(f.details)}</div>
                 </li>
               ))}
             </ul>

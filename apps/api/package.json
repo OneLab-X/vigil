@@ -10,7 +10,8 @@
     "admin": "tsx src/admin-cli.ts",
     "seed": "tsx --env-file-if-exists=../../.env src/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "tsx src/demo-seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.913.0",

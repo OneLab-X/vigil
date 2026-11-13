@@ -7,6 +7,7 @@
     "db:stop": "bash scripts/db.sh stop",
     "db:migrate": "pnpm --filter @vigil/db migrate",
     "db:seed": "pnpm --filter @vigil/api seed",
+    "db:demo": "pnpm --filter @vigil/api demo",
     "dev": "pnpm db:start && concurrently --kill-others --names api,agents,web --prefix-colors blue,magenta,green \"pnpm dev:api\" \"pnpm dev:agents\" \"pnpm dev:web\"",
     "dev:api": "pnpm --filter @vigil/api dev",
     "dev:web": "pnpm --filter @vigil/web dev",
