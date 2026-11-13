@@ -161,7 +161,7 @@ download_bundle() { # verifies SHA256SUMS and (when cosign is present) its Sigst
   ok "checksum verified: $tarball"
   tar -xzf "$TMP/$tarball" -C "$TMP"
   BUNDLE="$TMP/vigil-deploy-$VERSION"
-  [ -f "$BUNDLE/compose.yaml" ] && [ -x "$BUNDLE/scripts/install.sh" ] || die "release bundle is incomplete"
+  if [ ! -f "$BUNDLE/compose.yaml" ] || [ ! -x "$BUNDLE/scripts/install.sh" ]; then die "release bundle is incomplete"; fi
 }
 
 install_cli() {
@@ -239,7 +239,7 @@ main() {
   case "$TLS_MODE" in acme|custom|internal|off) ;; *) die "--tls-mode must be acme, custom, internal or off";; esac
   [ -z "$ACME_EMAIL" ] || [[ "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "invalid --email '$ACME_EMAIL'"
   if [ "$TLS_MODE" = custom ]; then
-    [ -s "$TLS_CERT" ] && [ -s "$TLS_KEY" ] || die "--tls-mode custom needs readable --tls-cert and --tls-key files"
+    if [ ! -s "$TLS_CERT" ] || [ ! -s "$TLS_KEY" ]; then die "--tls-mode custom needs readable --tls-cert and --tls-key files"; fi
     TLS_CERT="$(cd "$(dirname "$TLS_CERT")" && pwd)/$(basename "$TLS_CERT")"; TLS_KEY="$(cd "$(dirname "$TLS_KEY")" && pwd)/$(basename "$TLS_KEY")"
   fi
 

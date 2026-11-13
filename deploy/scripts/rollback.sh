@@ -22,7 +22,7 @@ if [ -z "$dir" ]; then
   dir="$(find "$BACKUP_ROOT" -mindepth 2 -maxdepth 2 -name previous-version -print 2>/dev/null | sort | tail -1)"
   dir="${dir%/previous-version}"
 fi
-[ -n "$dir" ] && [ -f "$dir/previous-version" ] || die "no upgrade backup found; usage: rollback.sh <backup-dir made by upgrade.sh> [--yes]"
+if [ -z "$dir" ] || [ ! -f "$dir/previous-version" ]; then die "no upgrade backup found; usage: rollback.sh <backup-dir made by upgrade.sh> [--yes]"; fi
 prev="$(cat "$dir/previous-version")"
 [[ "$prev" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid previous version '$prev' in $dir"
 info "rolling back to $prev using $dir"
