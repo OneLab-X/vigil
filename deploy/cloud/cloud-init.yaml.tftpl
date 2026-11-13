@@ -1,0 +1,34 @@
+#cloud-config
+# Vigil first-boot install (shared by deploy/cloud/{aws,gcp,azure}). Rendered by Terraform templatefile();
+# every value is validated by the module variables before it reaches this file.
+# Downloads get.sh for a pinned release, verifies it against that release's SHA256SUMS (and an optional pinned hash),
+# then runs it non-interactively. The owner's one-time password is written to /opt/vigil/initial-owner-password
+# (root-only), never to the cloud-init log.
+write_files:
+  - path: /root/vigil-install.sh
+    owner: root:root
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      version='${vigil_version}'
+      base="https://github.com/OneLab-X/vigil/releases/download/v$version"
+      work="$(mktemp -d)"
+      curl -fsSL --retry 5 --retry-delay 5 -o "$work/get.sh" "$base/get.sh"
+      curl -fsSL --retry 5 --retry-delay 5 -o "$work/SHA256SUMS" "$base/SHA256SUMS"
+      (cd "$work" && grep -E '  get\.sh$' SHA256SUMS | sha256sum -c -)
+      pinned='${get_sh_sha256}'
+      if [ -n "$pinned" ]; then echo "$pinned  $work/get.sh" | sha256sum -c -; fi
+%{ if aws_principal_arn != "" ~}
+      export VIGIL_AWS_PRINCIPAL_ARN='${aws_principal_arn}'
+%{ endif ~}
+      args=(--version "$version" --yes --admin-email '${admin_email}' --admin-name '${admin_name}' --org '${org_name}')
+%{ if domain != "" ~}
+      args+=(--domain '${domain}')
+%{ if acme_email != "" ~}
+      args+=(--email '${acme_email}')
+%{ endif ~}
+%{ endif ~}
+      bash "$work/get.sh" "$${args[@]}"
+runcmd:
+  - [bash, /root/vigil-install.sh]

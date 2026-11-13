@@ -105,6 +105,54 @@ describe("Azure permission probe", () => {
   });
 });
 
+describe("Azure managed identity (IMDS, keyless)", () => {
+  const imds = (seen: URL[], status = 200) => fakeAzure({ onUrl: (u, init) => {
+    if (u.host !== "169.254.169.254") return undefined;
+    seen.push(u);
+    expect(new Headers(init?.headers).get("metadata")).toBe("true");
+    if (status !== 200) return new Response("no identity", { status });
+    const res = u.searchParams.get("resource") ?? "";
+    const claims = res.includes("graph") ? { tid: AZ_TENANT, appid: "mi", idtyp: "app", roles: ["AuditLog.Read.All"] } : { tid: AZ_TENANT, appid: "mi", idtyp: "app", xms_mirid: "/subscriptions/x/providers/Microsoft.ManagedIdentity/userAssignedIdentities/vigil" };
+    return json({ access_token: jwt(claims), expires_in: "3599", token_type: "Bearer" });
+  } });
+
+  it("gets tokens from IMDS with the Metadata header, per resource, without any secret or login.microsoftonline.com call", async () => {
+    const seen: URL[] = [];
+    const { f, calls } = imds(seen);
+    const c = new AzureConnector(cfg({ authMode: "managed_identity", clientId: undefined }), null, undefined, { production: true, env: {}, fetch: f });
+    const r = await c.testConnection();
+    expect(r.ok).toBe(true);
+    expect(r.readOnly).toBe(true);
+    expect(r.credentialType).toBe("managed_identity:app");
+    expect(calls.some((x) => x.includes("login.microsoftonline.com"))).toBe(false);
+    expect(seen.every((u) => u.pathname === "/metadata/identity/oauth2/token" && !u.searchParams.has("client_id"))).toBe(true);
+    expect(new Set(seen.map((u) => u.searchParams.get("resource")))).toContain("https://management.azure.com");
+  });
+
+  it("selects a user-assigned identity by client id", async () => {
+    const seen: URL[] = [];
+    const c = new AzureConnector(cfg({ authMode: "managed_identity" }), null, undefined, { production: true, env: {}, fetch: imds(seen).f });
+    await c.testConnection();
+    expect(seen[0]!.searchParams.get("client_id")).toBe("99999999-8888-7777-6666-555555555555");
+  });
+
+  it("explains a missing identity instead of failing obscurely", async () => {
+    const c = new AzureConnector(cfg({ authMode: "managed_identity" }), null, undefined, { production: true, env: {}, fetch: imds([], 400).f });
+    const r = await c.testConnection();
+    expect(r.ok).toBe(false);
+    expect(r.errors[0]).toMatch(/managed identity token unavailable/);
+  });
+
+  it("validates: no clientId needed, client secrets refused", () => {
+    const v = azureConnectorDefinition.validate!;
+    expect(v(cfg({ authMode: "managed_identity", clientId: undefined }), undefined, { production: true, env: {} })).toBeNull();
+    expect(v(cfg({ authMode: "managed_identity" }), { clientSecret: SECRET }, { production: true, env: {} })).toMatch(/only used with authMode=client_secret/);
+    const steps = azureConnectorDefinition.onboardingInstructions!(cfg({ authMode: "managed_identity", clientId: undefined }), null, { production: true, env: {} }) as { commands: string[] };
+    expect(steps.commands.join("\n")).not.toMatch(/client-secret|credential reset|federated-credential/);
+    expect(steps.commands.join("\n")).toMatch(/Monitoring Reader/);
+  });
+});
+
 describe("Azure paging, checkpoints and rate limits", () => {
   const start = new Date("2026-11-11T00:00:00Z"), end = new Date("2026-11-11T06:00:00Z");
 
@@ -257,7 +305,7 @@ describe("Azure detections", () => {
   it("describes Azure fields for the UI, client secret as a secret field", () => {
     const d = describeConnector(azureConnectorDefinition, { production: true });
     expect(d.fields.find((f) => f.name === "clientSecret")).toMatchObject({ scope: "credentials", kind: "secret", secret: true, showWhen: { authMode: ["client_secret"] } });
-    expect(d.fields.find((f) => f.name === "authMode")!.options!.map((o) => o.value)).toEqual(["workload_identity", "client_secret"]);
+    expect(d.fields.find((f) => f.name === "authMode")!.options!.map((o) => o.value)).toEqual(["workload_identity", "managed_identity", "client_secret"]);
   });
 });
 
