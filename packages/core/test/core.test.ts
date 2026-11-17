@@ -136,7 +136,11 @@ describe("grounding validator", () => {
       entities: { ips: ["198.51.100.9"], principals: [], resources: [] },
       evidence: [{ event_id: randomUUID(), claim: "made up" }, { event_id: ev.id, claim: "status was ok", cited_fields: { http_status: 200 } }],
     });
-    const problems = validateGrounding(bad, seen).map((i) => i.path);
+    const issues = validateGrounding(bad, seen);
+    expect(issues.every((i) => i.code.startsWith("grounding_"))).toBe(true);
+    expect(issues.find((i) => i.path === "summary")?.code).toBe("grounding_unknown_ip");
+    expect(issues.find((i) => i.path === "evidence[0]")?.code).toBe("grounding_unknown_event");
+    const problems = issues.map((i) => i.path);
     expect(problems).toEqual(expect.arrayContaining(["summary", "timeline[0].timestamp", "entities.ips[0]", "evidence[0]", "evidence[1].cited_fields.http_status"]));
   });
   it("requires evidence for strong verdicts and allows evidence-free abstention", () => {

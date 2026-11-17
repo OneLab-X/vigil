@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .agent import Broker, Limits, RunOutcome, RunRequest, run_agent
+from .agent import EVAL_FLAGS, Broker, Limits, RunOutcome, RunRequest, eval_mode, maybe_capture, run_agent
 from .providers import ModelConfig, ProviderError, make_provider
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -56,6 +56,8 @@ class RunIn(BaseModel):
     model: ModelIn
     prompt_version: str
     limits: LimitsIn
+    # Evaluation-only ablation switches; refused unless this worker runs with VIGIL_EVAL_MODE=1.
+    eval_flags: list[str] = Field(default_factory=list, max_length=8)
 
 
 @app.exception_handler(RequestValidationError)
@@ -83,11 +85,11 @@ async def _execute(body: RunIn) -> None:
     cfg = body.model.config()
     req = RunRequest(run_id=body.run_id, role=body.role, case_id=body.case_id, task=body.task, run_token=body.run_token,
                      broker_url=body.broker_url, tools=body.tools, model_provider=body.model.provider, model_name=body.model.name,
-                     prompt_version=body.prompt_version, limits=Limits(**body.limits.model_dump()))
+                     prompt_version=body.prompt_version, limits=Limits(**body.limits.model_dump()), eval_flags=frozenset(body.eval_flags))
     broker = Broker(req.broker_url, req.run_token)
     async with _sem:
         try:
-            provider = make_provider(req.model_provider, req.model_name, cfg=cfg)
+            provider = maybe_capture(make_provider(req.model_provider, req.model_name, cfg=cfg), req.run_id)
             outcome = await run_agent(req, provider, broker)
         except ProviderError as e:
             outcome = RunOutcome(status="failed", error=f"provider unavailable: {e}")
@@ -100,6 +102,11 @@ async def _execute(body: RunIn) -> None:
 @app.post("/v1/runs", status_code=202)
 async def start_run(body: RunIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _check_internal(authorization)
+    if body.eval_flags:
+        if not eval_mode():
+            raise HTTPException(400, "eval_flags are only accepted when the agent worker runs with VIGIL_EVAL_MODE=1")
+        if set(body.eval_flags) - EVAL_FLAGS:
+            raise HTTPException(400, f"unknown eval flags; allowed: {sorted(EVAL_FLAGS)}")
     t = asyncio.create_task(_execute(body))
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)

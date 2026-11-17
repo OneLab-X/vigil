@@ -33,6 +33,17 @@ create extension if not exists vector;
 create extension if not exists pgcrypto;
 SQL
     echo "postgres ready on 127.0.0.1:$PORT";;
+  eval)
+    # Dedicated database for the VigilBench evaluation harness (docs/research/EVAL_HARNESS.md). Never the dev database.
+    "$0" start >/dev/null
+    psql -h 127.0.0.1 -p "$PORT" -U postgres -tc "select 1 from pg_database where datname='vigil_eval'" | grep -q 1 || psql -h 127.0.0.1 -p "$PORT" -U postgres -v ON_ERROR_STOP=1 <<SQL
+create database vigil_eval owner vigil_owner;
+\c vigil_eval
+create extension if not exists vector;
+create extension if not exists pgcrypto;
+SQL
+    VIGIL_OWNER_DATABASE_URL="postgres://vigil_owner:vigil_owner_dev@127.0.0.1:$PORT/vigil_eval" pnpm --dir "$ROOT" --filter @vigil/db migrate
+    echo "evaluation database vigil_eval ready";;
   stop) pg_ctl -D "$PGDATA" -w stop;;
   reset) pg_ctl -D "$PGDATA" -w stop || true; rm -rf "$PGDATA"; "$0" start;;
 esac
