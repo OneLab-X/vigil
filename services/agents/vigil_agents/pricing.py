@@ -19,7 +19,7 @@ PRICES: dict[str, list[tuple[date, float, float]]] = {
     "gemini-3.8-flash": [(date(2000, 1, 1), 0.75, 3.75), (date(2027, 1, 1), 1.50, 7.50)],
 }
 
-UNPRICED_OK = {"test-script"}  # scripted provider (tests/eval only)
+UNPRICED_OK = {"test-script", "eval-abstain"}  # scripted provider (tests/eval only)
 
 
 def _rate(model: str, today: date | None = None) -> tuple[float, float] | None:

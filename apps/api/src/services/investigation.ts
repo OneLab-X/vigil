@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { InvestigationContractSchema, Masker, TriageOutputSchema, validateGrounding, type GroundingEvent } from "@vigil/core";
+import { GROUNDING_CODES, InvestigationContractSchema, Masker, TriageOutputSchema, validateGrounding, type GroundingEvent, type GroundingIssue } from "@vigil/core";
 import {
   agentDefinitions, cloudAccounts, approvalRequests, incidentNotes, incidents, investigationEvidence, investigationRuns, investigationToolCalls,
   investigationVerdicts, modelUsage, recommendations, securityEvents, withTenant, type Db, type Tx,
@@ -38,7 +38,14 @@ function taskFor(role: AgentRole, cid: string) {
 }
 
 /** Create a run row, mint a scoped token, and hand the run to the agent worker. */
-export async function startAgentRun(db: Db, tenantId: string, incidentId: string, role: AgentRole, triggeredBy: string | null, opts: { masking?: MaskingMode } = {}) {
+/** Evaluation-only ablation switches understood by the agent worker (services/agents/vigil_agents/agent.py EVAL_FLAGS). */
+export const EVAL_FLAGS = ["no_envelope", "no_ground_rules", "write_stub", "single_shot"] as const;
+export type EvalFlag = (typeof EVAL_FLAGS)[number];
+
+export async function startAgentRun(db: Db, tenantId: string, incidentId: string, role: AgentRole, triggeredBy: string | null, opts: { masking?: MaskingMode; evalFlags?: EvalFlag[] } = {}) {
+  const evalFlags = [...new Set(opts.evalFlags ?? [])].sort();
+  if (evalFlags.length && !env.evalMode) throw new ApiError(400, "eval_mode_required", "evaluation flags require VIGIL_EVAL_MODE=1 (never in production)");
+  if (evalFlags.some((f) => !(EVAL_FLAGS as readonly string[]).includes(f))) throw new ApiError(400, "bad_eval_flag", "unknown evaluation flag");
   const created = await withTenant(db, { tenantId }, async (tx) => {
     await ensureAgentDefinitions(tx, tenantId);
     const [inc] = await tx.select().from(incidents).where(eq(incidents.id, incidentId));
@@ -58,13 +65,15 @@ export async function startAgentRun(db: Db, tenantId: string, incidentId: string
       m.seed(accts.map((x) => ({ kind: "ACCOUNT" as const, value: x.externalId, hint: x.provider })));
       maskState = sealMaskState(m);
     }
+    // Ablation runs are self-describing: the flags become part of the recorded prompt version.
+    const promptVersion = evalFlags.length ? `${def.promptVersion}+${evalFlags.join("+")}` : def.promptVersion;
     const [run] = await tx.insert(investigationRuns).values({
       tenantId, incidentId, agentDefinitionId: def.id, role, status: "running", task: taskFor(role, cid), modelProvider: def.modelProvider,
-      modelName: def.modelName, promptVersion: def.promptVersion, triggeredBy, startedAt: new Date(), masking, maskState,
+      modelName: def.modelName, promptVersion, triggeredBy, startedAt: new Date(), masking, maskState,
     }).returning();
     if (role === "investigation_analyst" && inc.status === "new") await tx.update(incidents).set({ status: "investigating", updatedAt: new Date() }).where(eq(incidents.id, incidentId));
     await pgQueue.enqueue(tx, tenantId, "run_timeout", { runId: run!.id }, { runAfter: new Date(Date.now() + (def.timeoutSeconds + 60) * 1000), idempotencyKey: `timeout:${run!.id}` });
-    await audit(tx, { tenantId, actorType: triggeredBy ? "user" : "system", actorId: triggeredBy ?? "orchestrator", action: "agent.run.started", targetType: "investigation_run", targetId: run!.id, details: { role, incident_id: incidentId, model: `${def.modelProvider}/${def.modelName}`, model_hosting: model.hosting, model_provider_id: def.modelProviderId, masking, prompt_version: def.promptVersion } });
+    await audit(tx, { tenantId, actorType: triggeredBy ? "user" : "system", actorId: triggeredBy ?? "orchestrator", action: "agent.run.started", targetType: "investigation_run", targetId: run!.id, details: { role, incident_id: incidentId, model: `${def.modelProvider}/${def.modelName}`, model_hosting: model.hosting, model_provider_id: def.modelProviderId, masking, prompt_version: promptVersion } });
     return { run: run!, def, cid, model };
   });
   const { run, def, cid, model } = created;
@@ -79,6 +88,7 @@ export async function startAgentRun(db: Db, tenantId: string, incidentId: string
         model: { provider: model.provider, name: model.name, endpoint: model.endpoint, api_key: model.api_key, timeout_seconds: model.timeout_seconds,
           price_input_per_mtok: model.price_input_per_mtok, price_output_per_mtok: model.price_output_per_mtok }, prompt_version: def.promptVersion,
         limits: { max_steps: def.maxSteps, timeout_seconds: def.timeoutSeconds, token_budget: def.tokenBudget, cost_budget_usd: Number(def.costBudgetUsd) },
+        ...(evalFlags.length ? { eval_flags: evalFlags } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -130,7 +140,7 @@ export async function submitRunResult(db: Db, bearer: string | undefined, runId:
     if (masker) {
       const u = masker.unmask(body.output);
       if (u.unknownTokens.length) {
-        await finish("rejected", { output: body.output as object, validationErrors: u.unknownTokens.slice(0, 20).map((t) => ({ path: "output", problem: `masked value ${t} was never issued in this run` })) });
+        await finish("rejected", { output: body.output as object, validationErrors: u.unknownTokens.slice(0, 20).map((t) => ({ path: "output", code: GROUNDING_CODES.unknownMaskToken, problem: `masked value ${t} was never issued in this run` })) });
         return null;
       }
       output = u.value;
@@ -141,7 +151,7 @@ export async function submitRunResult(db: Db, bearer: string | undefined, runId:
       if (!parsed.success) { await finish("rejected", { output: output as object, validationErrors: parsed.error.issues.slice(0, 20) }); return null; }
       const seen = await seenEventIds(tx, runId);
       const unknown = parsed.data.related_event_ids.filter((id) => !seen.has(id));
-      if (unknown.length) { await finish("rejected", { output: parsed.data, validationErrors: unknown.map((id) => ({ path: "related_event_ids", problem: `event ${id} not retrieved in this run` })) }); return null; }
+      if (unknown.length) { await finish("rejected", { output: parsed.data, validationErrors: unknown.map((id) => ({ path: "related_event_ids", code: GROUNDING_CODES.unknownEvent, problem: `event ${id} not retrieved in this run` })) }); return null; }
       await finish("succeeded", { output: parsed.data });
       await tx.insert(incidentNotes).values({ tenantId: tok.tenant_id, incidentId: run.incidentId, authorRunId: runId, body: `Detection Analyst triage (${parsed.data.priority}): ${parsed.data.should_investigate ? "investigation warranted" : "investigation not warranted"} — ${parsed.data.rationale}` });
       return parsed.data.should_investigate ? { tenantId: tok.tenant_id, incidentId: run.incidentId } : null;
@@ -150,8 +160,8 @@ export async function submitRunResult(db: Db, bearer: string | undefined, runId:
     const parsed = InvestigationContractSchema.safeParse(output);
     if (!parsed.success) { await finish("rejected", { output: output as object, validationErrors: parsed.error.issues.slice(0, 20) }); return null; }
     const c = parsed.data;
-    const issues: Array<{ path: string; problem: string }> = [];
-    if (c.case_id !== caseId(inc!.caseNumber)) issues.push({ path: "case_id", problem: `expected ${caseId(inc!.caseNumber)}` });
+    const issues: GroundingIssue[] = [];
+    if (c.case_id !== caseId(inc!.caseNumber)) issues.push({ path: "case_id", code: GROUNDING_CODES.caseIdMismatch, problem: `expected ${caseId(inc!.caseNumber)}` });
     const seenIds = await seenEventIds(tx, runId);
     const seen = new Map<string, GroundingEvent>();
     if (seenIds.size) {

@@ -10,6 +10,10 @@ function req(name: string, devDefault: string): string {
   return devDefault;
 }
 
+if (process.env.VIGIL_EVAL_MODE === "1" && process.env.NODE_ENV === "production") {
+  throw new Error("VIGIL_EVAL_MODE is for a dedicated benchmark install and is refused when NODE_ENV=production");
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 8080),
@@ -32,4 +36,6 @@ export const env = {
   /** Operations page: a log source whose watermark is older than this is "lagging". */
   opsLagThresholdMinutes: Number(process.env.VIGIL_OPS_LAG_THRESHOLD_MINUTES ?? 30),
   secureCookies: process.env.NODE_ENV === "production",
+  /** Evaluation harness only (docs/research/EVAL_STUDY.md): allows ablation switches on agent runs. Never in production. */
+  evalMode: process.env.VIGIL_EVAL_MODE === "1" && process.env.NODE_ENV !== "production",
 };

@@ -55,7 +55,27 @@ export interface GroundingEvent {
   urlPath: string | null;
 }
 
-export interface GroundingIssue { path: string; problem: string }
+/**
+ * Stable machine-readable codes for grounding problems (the `problem` text is for humans and may change).
+ * The first five are fabrications: the output refers to something the agent never saw. The rest are
+ * internal-consistency problems. Every code starts with "grounding_" so it never collides with schema issue codes.
+ */
+export const GROUNDING_CODES = {
+  unknownEvent: "grounding_unknown_event",
+  fieldMismatch: "grounding_field_mismatch",
+  unknownIp: "grounding_unknown_ip",
+  timestampMismatch: "grounding_timestamp_mismatch",
+  unknownMaskToken: "grounding_unknown_mask_token",
+  unknownField: "grounding_unknown_field",
+  missingEvidence: "grounding_missing_evidence",
+  inconsistentConfidence: "grounding_inconsistent_confidence",
+  caseIdMismatch: "grounding_case_id_mismatch",
+} as const;
+export type GroundingCode = (typeof GROUNDING_CODES)[keyof typeof GROUNDING_CODES];
+export const FABRICATION_CODES: ReadonlySet<string> = new Set([
+  GROUNDING_CODES.unknownEvent, GROUNDING_CODES.fieldMismatch, GROUNDING_CODES.unknownIp, GROUNDING_CODES.timestampMismatch, GROUNDING_CODES.unknownMaskToken,
+]);
+export interface GroundingIssue { path: string; problem: string; code: GroundingCode }
 
 const IP_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g;
 const FIELD_MAP: Record<string, keyof GroundingEvent> = {
@@ -75,17 +95,17 @@ export function validateGrounding(c: InvestigationContract, seen: Map<string, Gr
 
   const checkItem = (item: z.infer<typeof EvidenceItem>, path: string) => {
     const ev = seen.get(item.event_id);
-    if (!ev) { issues.push({ path, problem: `event ${item.event_id} was not returned by any tool call in this run` }); return; }
+    if (!ev) { issues.push({ path, code: GROUNDING_CODES.unknownEvent, problem: `event ${item.event_id} was not returned by any tool call in this run` }); return; }
     for (const [k, v] of Object.entries(item.cited_fields ?? {})) {
       const col = FIELD_MAP[k];
-      if (!col) { issues.push({ path: `${path}.cited_fields.${k}`, problem: "unknown field" }); continue; }
+      if (!col) { issues.push({ path: `${path}.cited_fields.${k}`, code: GROUNDING_CODES.unknownField, problem: "unknown field" }); continue; }
       const actual = ev[col];
       const same = col === "eventTimestamp"
         ? typeof v === "string" && Date.parse(v) === Date.parse(String(actual))
         : String(actual ?? "") === String(v ?? "");
-      if (!same) issues.push({ path: `${path}.cited_fields.${k}`, problem: `cited ${JSON.stringify(v)} but event has ${JSON.stringify(actual)}` });
+      if (!same) issues.push({ path: `${path}.cited_fields.${k}`, code: GROUNDING_CODES.fieldMismatch, problem: `cited ${JSON.stringify(v)} but event has ${JSON.stringify(actual)}` });
     }
-    for (const ip of item.claim.match(IP_RE) ?? []) if (!knownIps.has(ip)) issues.push({ path: `${path}.claim`, problem: `IP ${ip} not present in any retrieved event` });
+    for (const ip of item.claim.match(IP_RE) ?? []) if (!knownIps.has(ip)) issues.push({ path: `${path}.claim`, code: GROUNDING_CODES.unknownIp, problem: `IP ${ip} not present in any retrieved event` });
   };
 
   c.evidence.forEach((e, i) => checkItem(e, `evidence[${i}]`));
@@ -93,14 +113,14 @@ export function validateGrounding(c: InvestigationContract, seen: Map<string, Gr
   c.timeline.forEach((t, i) => {
     if (!t.event_id) return;
     const ev = seen.get(t.event_id);
-    if (!ev) issues.push({ path: `timeline[${i}]`, problem: `event ${t.event_id} not retrieved in this run` });
-    else if (Math.abs(Date.parse(t.timestamp) - Date.parse(ev.eventTimestamp)) > 1000) issues.push({ path: `timeline[${i}].timestamp`, problem: `timestamp ${t.timestamp} does not match event (${ev.eventTimestamp})` });
+    if (!ev) issues.push({ path: `timeline[${i}]`, code: GROUNDING_CODES.unknownEvent, problem: `event ${t.event_id} not retrieved in this run` });
+    else if (Math.abs(Date.parse(t.timestamp) - Date.parse(ev.eventTimestamp)) > 1000) issues.push({ path: `timeline[${i}].timestamp`, code: GROUNDING_CODES.timestampMismatch, problem: `timestamp ${t.timestamp} does not match event (${ev.eventTimestamp})` });
   });
-  c.entities.ips.forEach((ip, i) => { if (!knownIps.has(ip)) issues.push({ path: `entities.ips[${i}]`, problem: `IP ${ip} not present in any retrieved event` }); });
-  for (const ip of c.summary.match(IP_RE) ?? []) if (!knownIps.has(ip)) issues.push({ path: "summary", problem: `IP ${ip} not present in any retrieved event` });
+  c.entities.ips.forEach((ip, i) => { if (!knownIps.has(ip)) issues.push({ path: `entities.ips[${i}]`, code: GROUNDING_CODES.unknownIp, problem: `IP ${ip} not present in any retrieved event` }); });
+  for (const ip of c.summary.match(IP_RE) ?? []) if (!knownIps.has(ip)) issues.push({ path: "summary", code: GROUNDING_CODES.unknownIp, problem: `IP ${ip} not present in any retrieved event` });
 
   // Strong verdicts require evidence. Abstention verdicts don't.
-  if ((c.verdict === "confirmed" || c.verdict === "likely") && c.evidence.length === 0) issues.push({ path: "evidence", problem: `verdict ${c.verdict} requires at least one evidence item` });
-  if (c.verdict === "confirmed" && c.confidence < 0.5) issues.push({ path: "confidence", problem: "confirmed verdict with confidence < 0.5 is inconsistent" });
+  if ((c.verdict === "confirmed" || c.verdict === "likely") && c.evidence.length === 0) issues.push({ path: "evidence", code: GROUNDING_CODES.missingEvidence, problem: `verdict ${c.verdict} requires at least one evidence item` });
+  if (c.verdict === "confirmed" && c.confidence < 0.5) issues.push({ path: "confidence", code: GROUNDING_CODES.inconsistentConfidence, problem: "confirmed verdict with confidence < 0.5 is inconsistent" });
   return issues;
 }

@@ -38,3 +38,29 @@ Role: Investigation Analyst. Work the case like a senior SOC analyst:
 You may propose a new detection rule with propose_detection_rule when a pattern was missed; a human approves it.
 """,
 }
+
+# ---------------------------------------------------------------- evaluation-only variants
+# Used by the ablation study (docs/research/EVAL_STUDY.md) when the agent service runs with VIGIL_EVAL_MODE=1.
+# The production prompt above is never modified by these; they are separate strings.
+
+# Same as _COMMON minus the security ground rules (untrusted-data policy, read-only/human-approval rule,
+# cite-or-abstain rule). Keeps what the agent needs to function: masking tokens, abstention, output format.
+_COMMON_NO_GROUND_RULES = """You are part of Vigil, a security operations platform. You work for the customer's security team.
+
+Working notes:
+- Some values may be masked for privacy as tokens like [[IP_3:public]], [[EMAIL_1]], [[SVC_2:gcp]], [[ROLE_1:aws]],
+  [[ACCOUNT_1:gcp]] or [[RESOURCE_4]]. The same token always means the same real value within this case. Use tokens
+  exactly as written (including the part after the colon) in tool arguments and in your result; they are resolved
+  for you. The hint after the colon is reliable (e.g. public vs private IP, service account vs user).
+- Prefer abstaining (verdict "needs_more_data" or "inconclusive") over guessing.
+- Severity (impact if real), confidence (how sure you are) and verdict (what happened) are independent.
+- Finish by calling the submit_result tool exactly once with your final structured output. Do not put the
+  final answer in plain text.
+"""
+
+ROLE_PROMPTS_NO_GROUND_RULES = {role: _COMMON_NO_GROUND_RULES + text[len(_COMMON):] for role, text in ROLE_PROMPTS.items()}
+
+SINGLE_SHOT_NOTE = (
+    "\n\nAll case data you will get is included below. You have no investigation tools in this mode; "
+    "analyse the data and call submit_result once.\n\n"
+)

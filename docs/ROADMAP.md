@@ -15,7 +15,7 @@ not merely designed.
 | Push / streaming ingestion (webhooks, Event Hubs, log forwarding) | Planned | `ConnectorDefinition.streaming` reserved; `startStreaming` on the connector contract |
 | Splunk / Elastic / Microsoft Sentinel connectors | Planned | same registry; Sentinel can reuse the Azure Log Analytics windowed KQL path |
 | Rule export; rule approval workflow UI | Partial | import, Sigma subset, versioning, replay done |
-| Agent evaluation datasets against real models | Partial | detection replay done; agent eval harness pending |
+| Agent evaluation datasets against real models | Partial | detection replay done; agent eval harness built ([EVAL_HARNESS.md](research/EVAL_HARNESS.md)); benchmark content and real-model runs pending |
 | AWS live validation, GuardDuty / Security Hub | Planned | adapter written, not live-tested |
 | New Relic connector (Logs via NerdGraph NRQL, cloud-payload delegation) | **Done** (fixtures) · live validation pending | `scripts/verify-newrelic-live.mts` |
 | Datadog connector (Logs search, Cloud SIEM signals, Audit Trail; cloud-payload delegation) | **Done** (fixtures) · live validation pending | `scripts/verify-datadog-live.mts`; log forwarding/streaming planned |

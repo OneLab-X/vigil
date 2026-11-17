@@ -1,0 +1,10 @@
+{
+  "name": "smoke",
+  "caseSources": ["builtin"],
+  "models": [{ "id": "abstain", "provider": "scripted", "name": "eval-abstain" }],
+  "configs": ["B0", "B1", "L0", "L0W", "L1", "L2", "L4"],
+  "repeats": 1,
+  "maxUsd": 1,
+  "concurrency": 3,
+  "limits": { "maxSteps": 6, "timeoutSeconds": 60, "tokenBudget": 50000, "costBudgetUsd": 0.5 }
+}

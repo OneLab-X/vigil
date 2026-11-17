@@ -362,6 +362,27 @@ class ScriptedProvider:
         self.seen.append({"user": text})
 
 
+def _eval_abstain_script() -> list[Any]:
+    """Built-in scripted "model" for exercising the evaluation harness without an LLM: reads the case context once,
+    then abstains, citing nothing. Also serves as a trivial always-abstain baseline."""
+    import re as _re
+
+    def submit(seen: list[Any]) -> dict[str, Any]:
+        first = next((s.get("user", "") for s in seen if "user" in s), "")
+        m = _re.search(r"Case: (CASE-\d{4,})", first)
+        return {"calls": [{"name": "submit_result", "args": {
+            "case_id": m.group(1) if m else "CASE-0000", "verdict": "needs_more_data", "severity": "medium", "confidence": 0.1,
+            "summary": "Scripted evaluation baseline: always abstains.", "timeline": [],
+            "entities": {"ips": [], "principals": [], "resources": []}, "evidence": [], "contradictory_evidence": [],
+            "impact_assessment": {"outcome": "unknown", "scope": "unknown", "data_exposure": "unknown"},
+            "recommended_actions": [], "requires_human_approval": True, "abstention_reason": "scripted baseline"}}]}
+
+    return [{"calls": [{"name": "get_case_context"}]}, submit]
+
+
+BUILTIN_SCRIPTS = {"eval-abstain": _eval_abstain_script}
+
+
 def make_provider(provider: str, model: str, script: list[dict[str, Any]] | None = None, cfg: ModelConfig | None = None) -> Provider:
     from .pricing import require_price
 
@@ -379,5 +400,7 @@ def make_provider(provider: str, model: str, script: list[dict[str, Any]] | None
     if provider == "gemini":
         return GeminiProvider(model, cfg=cfg)
     if provider == "scripted":
+        if script is None and model in BUILTIN_SCRIPTS:
+            return ScriptedProvider(BUILTIN_SCRIPTS[model](), model=model)
         return ScriptedProvider(script or [])
     raise ProviderError(f"unknown provider {provider}")
